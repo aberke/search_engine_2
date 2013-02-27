@@ -8,37 +8,49 @@ from bool_parser import bool_expr_ast as bool_parse # provided boolean parser fo
 
 from XMLparser import tokenize, create_stopwords_set
 
-#word&pageID_0%pos_0 pos_1&pageID_1%pos_0 pos_1 pos2&pageID_2%pos_0
+# index form: {'term': [df, [[pageID, wf, [position for position in page]] for each pageID]]}
+# SHOULD BE REPLACED WITH:
+#		{'term': [df, (function to retrieve postings list from file)]}
+
+# index written to file in format:  term*df&pageID_0%wf% pos_0 pos_1&pageID_1%wf% pos_0 pos_1 pos2&pageID_2%wf% pos_0
 
 # reconstructs the invertedIndex that createIndex made by reading from file
 # input: filename of inverted index file
-# output: inverted index
+# output: inverted index, N (total number of documents)
 def reconstruct_Index(ii_filename):
 	# reconstruct invertedIndex from file starting with empty dictionary
 	index = {} 
 	ii_file = open(ii_filename)
+	# retrieve N = total #documents, which was printed at the top of the page
+	N = int((ii_file.readline()).split()[0])
 
 	line = ii_file.readline()
 	while line != '': # read to EOF
 		# TODO: REPLACE THIS WITH MORE EFFICIENT PARSER
 		l = line.split('&') # split along the postings delimeter   [word, [post0],[post1],...]
 		
-		# extract word 
-		word = l[0]
+		# extract word and document frequency (df)
+		meta_data = l[0].split('*')
+		word = meta_data[0]
+		df = meta_data[1]
 
 		# build postings list from empty list
 		postings = []
 		for i in range(1, len(l)):
 			p = l[i].split('%')
-			positions = [int(pos) for pos in p[1].split()]
-			posting = [int(p[0]), positions] # posting = [pageID, positions] 
+			pageID = int(p[0])
+			wf = float(p[1])
+			positions = [int(pos) for pos in p[2].split()]
+			#posting = [pageID, wf, positions] 
+			posting = [pageID, positions]  
 			postings.append(posting)
 
+		#index[word] = [df, postings]
 		index[word] = postings
 		line = ii_file.readline()
 
 	ii_file.close()
-	return index
+	return (index, N)
 
 # helper functions to 
 # input: two positions lists: positions_1 corresponds to the positions list of the first word, positions_2 corresponds to the positions list of second word
@@ -348,7 +360,7 @@ def handle_query(stopwords_set, index, stemmer, query):
 
 # main function
 def queryIndex(stopwords_filename, ii_filename, ti_filename):
-	index = reconstruct_Index(ii_filename)
+	(index,N) = reconstruct_Index(ii_filename)
 	stopwords_set = create_stopwords_set(stopwords_filename)
 	# instantiate stemmer to pass into tokenize
 	stemmer = PorterStemmer()

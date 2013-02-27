@@ -1,0 +1,27 @@
+- make our repo private?? Or discuss with TAs the collab policy around this?
+
+
+create module called search.io  -- mat
+	python module written in c
+
+	writeIndex
+
+	buildIndex
+		return dictionary mapping term to function to get postings list
+
+This to put into C:
+	createIndex:
+		writing to titleIndex
+		printIndex procedure
+		tokenize (uses stemmer)
+
+
+
+	for queryIndx have: 
+
+	# index form: {'term': [df, [[pageID, wf, [position for position in page]] for each pageID]]}
+# SHOULD BE REPLACED WITH:
+#		{'term': [df, (function to retrieve postings list from file)]}
+
+
+
