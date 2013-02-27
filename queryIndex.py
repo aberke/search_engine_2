@@ -1,3 +1,5 @@
+# use provided btrees for wildcard queries
+from BTrees.OOBTree import OOBTree
 # query index
 import sys
 # need sqrt and floor so that skips can occur every floor(sqrt(L)) pageID's where L = #pageID's
