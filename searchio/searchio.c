@@ -7,7 +7,7 @@
 #include "stemmer.h"
 
 /* Constants */
-#define SEARCHIO_TOKENIZER_BUFFER_SIZE 1024
+#define SEARCHIO_TOKENIZER_BUFFER_SIZE 1024 * 1024
 
 /* Handy macros */
 #define SEARCHIO_MAX(a, b) ((a < b) ? b : a)
@@ -75,6 +75,11 @@ static PyObject *searchio_tokenize(PyObject *self, PyObject *args)
     for (i = 0; i < wordsFound; i++)
     {
         size_t l = strlen(str);
+        if (l == 0)
+        {
+            str += 1;
+            continue;
+        }
         
         /* convert to a Python string */
         PyObject *pystr = PyString_FromString(str);
