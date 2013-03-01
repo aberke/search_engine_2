@@ -2,10 +2,11 @@
 # file 1 for project
 import sys
 from math import sqrt # for calculating norm of document vector
-import heapq # using heap to push docIDs as find them in parse
 from porter_martin import PorterStemmer # instantiate stemmer to pass into tokenize
 
 from XMLparser import parse, tokenize, create_stopwords_set
+
+import searchio  # import our own optimized I/O module
 
 # deals with appending to the titleIndex
 # store the pageID and title as they appear -- but we don't really need to store them in a datastructure since we're not doing anything special with them
@@ -73,8 +74,6 @@ def printIndex(ii_filename, N, index):
 def createIndex(stopwords_filename, pagesCollection_filename, ii_filename, ti_filename):
 	# open up the files for writing
 	titleIndex_file = open(ti_filename, 'w')
-	# instantiate stemmer to pass into tokenize
-	stemmer = PorterStemmer()
 
 	# obtain the stopwords in a set for quick checking
 	stopWords_set = create_stopwords_set(stopwords_filename)
@@ -104,7 +103,8 @@ def createIndex(stopwords_filename, pagesCollection_filename, ii_filename, ti_fi
 		titleIndex_append(titleIndex_file, pageID, titleString)
 
 		# tokenize titleString
-		token_list = tokenize(stopWords_set, stemmer, textString)
+		# token_list = tokenize(stopWords_set, stemmer, textString)
+        token_list = searchio.tokenize(stopWords_set, textString)
 		
 		# add to index:
 		position = 0
