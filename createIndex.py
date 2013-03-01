@@ -102,7 +102,7 @@ def createIndex(stopwords_filename, pagesCollection_filename, ii_filename, ti_fi
 
 		# tokenize titleString
 		# token_list = tokenize(stopWords_set, stemmer, textString)
-        token_list = searchio.tokenize(stopWords_set, textString)
+		token_list = searchio.tokenize(stopWords_set, textString)
 		
 		# add to index:
 		position = 0
