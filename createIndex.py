@@ -2,8 +2,6 @@
 # file 1 for project
 import sys
 from math import sqrt # for calculating norm of document vector
-from porter_martin import PorterStemmer # instantiate stemmer to pass into tokenize
-
 from XMLparser import parse, tokenize, create_stopwords_set
 
 import searchio  # import our own optimized I/O module
