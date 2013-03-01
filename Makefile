@@ -1,8 +1,10 @@
 # Build the searchio module, and symlink it into the root directory.
 
-searchio: searchio/setup.py searchio/searchio.c searchio/stemmer.c
-	cd searchio; python setup.py build
+searchio: buildit
 	ln -sf searchio/build/lib.*/searchio.so searchio.so
+
+buildit:
+	cd searchio; python setup.py build
 
 clean:
 	cd searchio; python setup.py clean
