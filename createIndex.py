@@ -43,29 +43,7 @@ def formPost(pageID, page_post, page_norm):
 # write out index in format:  term*df&pageID_0%wf% pos_0 pos_1&pageID_1%wf% pos_0 pos_1 pos2&pageID_2%wf% pos_0
 # 		--> print one line for each word in index
 def printIndex(ii_filename, N, index):
-	# open file to write to
-	invertedIndex_file = open(ii_filename, 'w')
-	# at top of invertedIndex file, write out total number of documents
-	invertedIndex_file.write(str(N)+'\n')
-	
-	for term in index:
-		df = index[term][0]
-		term_postings = index[term][1]
-		invertedIndex_file.write(term+"*"+str(df)) # so far wrote: word*df
-
-		for i in range(len(term_postings)):
-			post = term_postings[i]
-			pageID = post[0]
-			wf = post[1]
-			positions = post[2]
-
-			invertedIndex_file.write("&"+str(pageID)+"%"+str(wf)+"%")
-			for pos in positions:
-				invertedIndex_file.write(" "+str(pos))
-		invertedIndex_file.write("\n")
-	
-	invertedIndex_file.close()
-
+	searchio.createIndex(ii_filename, N, index)
 
 # input: <stopWords file>, <pagesCollection file>, <invertedIndex to be built>, <titleIndex to be built>
 # output: write to the files
