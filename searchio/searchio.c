@@ -348,10 +348,10 @@ static PyObject *searchio_loadIndex(PyObject *self, PyObject *args)
             }
             
             /* add an entry to the postings list */
-            PyObject *entry = PyList_New(2); /* 3 */
+            PyObject *entry = PyList_New(3);
             PyList_SetItem(entry, 0, PyLong_FromUnsignedLong(posting.pageID));
-            /* PyList_SetItem(entry, 1, PyFloat_FromDouble((double)posting.wf / (double)SEARCHIO_WF_SCALE)); */
-            PyList_SetItem(entry, 1, positions);
+            PyList_SetItem(entry, 1, PyFloat_FromDouble((double)posting.wf / (double)SEARCHIO_WF_SCALE));
+            PyList_SetItem(entry, 2, positions);
             PyList_SetItem(postings, j, entry);
             
             /* move to the next posting */
@@ -359,12 +359,10 @@ static PyObject *searchio_loadIndex(PyObject *self, PyObject *args)
         }
         
         /* store the result in the index */
-        /*PyObject *termEntry = PyList_New(0);
-        PyList_Append(termEntry, PyLong_FromUnsignedLong(term.df));
-        PyList_Append(termEntry, postings);
-        PyDict_SetItem(result, termStr, termEntry);*/
-        
-        PyDict_SetItem(result, termStr, postings);
+        PyObject *termEntry = PyList_New(2);
+        PyList_SetItem(termEntry, 0, PyLong_FromUnsignedLong(term.df));
+        PyList_SetItem(termEntry, 1, postings);
+        PyDict_SetItem(result, termStr, termEntry);
     }
     
     /* close the index and clean up */
