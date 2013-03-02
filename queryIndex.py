@@ -10,6 +10,8 @@ from bool_parser import bool_expr_ast as bool_parse # provided boolean parser fo
 
 from XMLparser import tokenize, create_stopwords_set
 
+import searchio  # import our own optimized I/O module
+
 # index form: {'term': [df, [[pageID, wf, [position for position in page]] for each pageID]]}
 # SHOULD BE REPLACED WITH:
 #		{'term': [df, (function to retrieve postings list from file)]}
@@ -20,39 +22,7 @@ from XMLparser import tokenize, create_stopwords_set
 # input: filename of inverted index file
 # output: inverted index, N (total number of documents)
 def reconstruct_Index(ii_filename):
-	# reconstruct invertedIndex from file starting with empty dictionary
-	index = {} 
-	ii_file = open(ii_filename)
-	# retrieve N = total #documents, which was printed at the top of the page
-	N = int((ii_file.readline()).split()[0])
-
-	line = ii_file.readline()
-	while line != '': # read to EOF
-		# TODO: REPLACE THIS WITH MORE EFFICIENT PARSER
-		l = line.split('&') # split along the postings delimeter   [word, [post0],[post1],...]
-		
-		# extract word and document frequency (df)
-		meta_data = l[0].split('*')
-		word = meta_data[0]
-		df = meta_data[1]
-
-		# build postings list from empty list
-		postings = []
-		for i in range(1, len(l)):
-			p = l[i].split('%')
-			pageID = int(p[0])
-			wf = float(p[1])
-			positions = [int(pos) for pos in p[2].split()]
-			#posting = [pageID, wf, positions] 
-			posting = [pageID, positions]  
-			postings.append(posting)
-
-		#index[word] = [df, postings]
-		index[word] = postings
-		line = ii_file.readline()
-
-	ii_file.close()
-	return (index, N)
+	return searchio.loadIndex(ii_filename)
 
 # helper functions to 
 # input: two positions lists: positions_1 corresponds to the positions list of the first word, positions_2 corresponds to the positions list of second word

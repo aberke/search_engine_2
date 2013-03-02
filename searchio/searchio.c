@@ -5,6 +5,7 @@
 
 #include <Python.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 #include "stemmer.h"
 
 /* Constants */
@@ -45,19 +46,24 @@ static char *searchio_tokenizerBuffer = NULL;
 static PyObject *searchio_test(PyObject *self, PyObject *args);
 static PyObject *searchio_tokenize(PyObject *self, PyObject *args);
 static PyObject *searchio_createIndex(PyObject *self, PyObject *args);
+static PyObject *searchio_loadIndex(PyObject *self, PyObject *args);
 
 /* Module method table */
 static PyMethodDef SearchioMethods[] = {
     {"test", &searchio_test, METH_VARARGS, "Test that the searchio module is working."},
     {"tokenize", &searchio_tokenize, METH_VARARGS, "Obtain a viable list of tokens from a string."},
     {"createIndex", &searchio_createIndex, METH_VARARGS, "Create an on-disk representation of the provided index."},
+    {"loadIndex", &searchio_loadIndex, METH_VARARGS, "Load an index from disk."},
     {NULL, NULL, 0, NULL}
 };
 
 /* Initialization function */
 PyMODINIT_FUNC initsearchio(void)
 {
+    /* initialize the tokenizer buffer */
     searchio_tokenizerBuffer = (char *)malloc(sizeof(char) * SEARCHIO_TOKENIZER_BUFFER_SIZE);
+    
+    /* initialize the module */
     Py_InitModule("searchio", SearchioMethods);
 }
 
@@ -140,6 +146,10 @@ static PyObject *searchio_createIndex(PyObject *self, PyObject *args)
     
     /* open the index file */
     int fd = open(filename, O_WRONLY|O_CREAT|O_TRUNC);
+    if (fd == -1)
+        return PyErr_SetFromErrno(PyExc_IOError);
+    
+    fchmod(fd, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
     size_t totalWritten = 0;
     
     /* get the number of terms in the index */
@@ -158,13 +168,16 @@ static PyObject *searchio_createIndex(PyObject *self, PyObject *args)
     totalWritten += write(fd, (void *)&header, sizeof(header));
     
     /* loop once over index to write term entries */
+    PyObject *indexKeys = PyDict_Keys(index);
+    Py_ssize_t indexKeyLen = PyList_Size(indexKeys);
+    
     uint32_t postingsOffset = 0;
-    
-    PyObject *key, *value;
-    Py_ssize_t pos = 0;
-    
-    while (PyDict_Next(index, &pos, &key, &value))
+    uint32_t keyIdx;
+    for (keyIdx = 0; keyIdx < indexKeyLen; keyIdx++)
     {
+        PyObject *key = PyList_GetItem(indexKeys, keyIdx);
+        PyObject *value = PyDict_GetItem(index, key);
+        
         /* create a term entry */
         searchio_index_term_t term;
         term.postingsOffset = htonl(postingsOffset);
@@ -206,8 +219,11 @@ static PyObject *searchio_createIndex(PyObject *self, PyObject *args)
     header.postingsStart = htonl(totalWritten);
     
     /* loop again to write postings lists */
-    while (PyDict_Next(index, &pos, &key, &value))
+    for (keyIdx = 0; keyIdx < indexKeyLen; keyIdx++)
     {
+        PyObject *key = PyList_GetItem(indexKeys, keyIdx);
+        PyObject *value = PyDict_GetItem(index, key);
+        
         /* get the postings list and its length */
         PyObject *postings = PyList_GetItem(value, 1);
         Py_ssize_t postingsLen = PyList_Size(postings);
@@ -236,7 +252,7 @@ static PyObject *searchio_createIndex(PyObject *self, PyObject *args)
             Py_ssize_t j;
             for (j = 0; j < positionsLen; j++)
             {
-                PyObject *item = PyList_GetItem(positions, i);
+                PyObject *item = PyList_GetItem(positions, j);
                 uint32_t p = htonl((uint32_t)PyInt_AsUnsignedLongMask(item));
                 write(fd, (void *)&p, sizeof(p));
             }
@@ -252,4 +268,108 @@ static PyObject *searchio_createIndex(PyObject *self, PyObject *args)
     
     /* no meaningful return value here */
     Py_RETURN_NONE;
+}
+static PyObject *searchio_loadIndex(PyObject *self, PyObject *args)
+{
+    /* grab the filename */
+    const char *filename = NULL;
+    
+    if (!PyArg_ParseTuple(args, "s", &filename))
+        return NULL;
+    
+    /* open the file, read the header */
+    int fd = open(filename, O_RDONLY);
+    if (fd == -1)
+        return PyErr_SetFromErrno(PyExc_IOError);
+    
+    struct stat indexStat;
+    fstat(fd, &indexStat);
+    
+    searchio_index_header_t header;
+    read(fd, (void *)&header, sizeof(header));
+    
+    /* normalize header values */
+    header.numDocuments = ntohl(header.numDocuments);
+    header.numTerms = ntohl(header.numTerms);
+    header.postingsStart = ntohl(header.postingsStart);
+    
+    /* allocate a postings buffer and load the postings into memory */
+    size_t postingsBufSize = ((size_t)indexStat.st_size - header.postingsStart);
+    void *postingsBuf = malloc(postingsBufSize);
+    lseek(fd, header.postingsStart, SEEK_SET);
+    read(fd, postingsBuf, postingsBufSize);
+    
+    lseek(fd, sizeof(header), SEEK_SET);
+    
+    /* create a result dictionary */
+    PyObject *result = PyDict_New();
+    
+    /* loop over the terms in the index, add them to the dictionary */
+    uint32_t i;
+    for (i = 0; i < header.numTerms; i++)
+    {
+        /* read and normalize a term header */
+        searchio_index_term_t term;
+        read(fd, (void *)&term, sizeof(term));
+        
+        term.postingsOffset = ntohl(term.postingsOffset);
+        term.df = ntohl(term.df);
+        term.numDocumentsInPostings = ntohl(term.numDocumentsInPostings);
+        term.termLength = ntohs(term.termLength);
+        
+        /* read the term, create a Python string */
+        read(fd, (void *)searchio_tokenizerBuffer, term.termLength);
+        searchio_tokenizerBuffer[term.termLength] = '\0';
+        
+        PyObject *termStr = PyString_FromString(searchio_tokenizerBuffer);
+        
+        /* create a postings list, load the postings */
+        PyObject *postings = PyList_New(term.numDocumentsInPostings);
+        uint32_t j;
+        size_t offset = term.postingsOffset;
+        for (j = 0; j < term.numDocumentsInPostings; j++)
+        {
+            /* grab the posting header */
+            searchio_index_posting_t posting;
+            memcpy(&posting, postingsBuf + offset, sizeof(posting));
+            
+            /* normalize it */
+            posting.pageID = ntohl(posting.pageID);
+            posting.wf = ntohl(posting.wf);
+            posting.numPositions = ntohl(posting.numPositions);
+            
+            /* create a positions list, fill it out */
+            PyObject *positions = PyList_New(posting.numPositions);
+            uint32_t k;
+            for (k = 0; k < posting.numPositions; k++)
+            {
+                uint32_t *position = ((uint32_t *)(postingsBuf + offset + sizeof(posting)) + k);
+                PyList_SetItem(positions, k, PyLong_FromUnsignedLong(ntohl(*position)));
+            }
+            
+            /* add an entry to the postings list */
+            PyObject *entry = PyList_New(2); /* 3 */
+            PyList_SetItem(entry, 0, PyLong_FromUnsignedLong(posting.pageID));
+            /* PyList_SetItem(entry, 1, PyFloat_FromDouble((double)posting.wf / (double)SEARCHIO_WF_SCALE)); */
+            PyList_SetItem(entry, 1, positions);
+            PyList_SetItem(postings, j, entry);
+            
+            /* move to the next posting */
+            offset += (sizeof(posting) + (sizeof(uint32_t) * posting.numPositions));
+        }
+        
+        /* store the result in the index */
+        /*PyObject *termEntry = PyList_New(0);
+        PyList_Append(termEntry, PyLong_FromUnsignedLong(term.df));
+        PyList_Append(termEntry, postings);
+        PyDict_SetItem(result, termStr, termEntry);*/
+        
+        PyDict_SetItem(result, termStr, postings);
+    }
+    
+    /* close the index and clean up */
+    close(fd);
+    free(postingsBuf);
+    
+    return PyTuple_Pack(2, result, PyLong_FromUnsignedLong(header.numDocuments));
 }
