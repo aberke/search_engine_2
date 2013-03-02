@@ -22,7 +22,7 @@ def docVecNorm(page_index):
 	norm = 0
 	for term in page_index:
 		tf = page_index[term][0]
-		norm += tf*tf
+		norm += (tf*tf)
 	return sqrt(norm)
 			
 # helper function to createIndex -- forms new post for postings list of index
@@ -80,7 +80,7 @@ def createIndex(stopwords_filename, pagesCollection_filename, ii_filename, ti_fi
 
 		# tokenize titleString
 		# token_list = tokenize(stopWords_set, stemmer, textString)
-		token_list = searchio.tokenize(stopWords_set, textString)
+		token_list = searchio.tokenize(stopWords_set, textString, False)
 		
 		# add to index:
 		position = 0

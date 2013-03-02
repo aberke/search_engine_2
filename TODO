@@ -1,3 +1,7 @@
+REPORT:
+	Matt: 1-3
+	Alex: 4-5
+
 - make our repo private?? Or discuss with TAs the collab policy around this?
 
 
@@ -23,5 +27,6 @@ This to put into C:
 # SHOULD BE REPLACED WITH:
 #		{'term': [df, (function to retrieve postings list from file)]}
 
+NEED TOKENIZE TO PRESERVE *
 
 
