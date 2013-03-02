@@ -43,14 +43,12 @@ typedef struct searchio_index_posting {
 static char *searchio_tokenizerBuffer = NULL;
 
 /* Module method declarations */
-static PyObject *searchio_test(PyObject *self, PyObject *args);
 static PyObject *searchio_tokenize(PyObject *self, PyObject *args);
 static PyObject *searchio_createIndex(PyObject *self, PyObject *args);
 static PyObject *searchio_loadIndex(PyObject *self, PyObject *args);
 
 /* Module method table */
 static PyMethodDef SearchioMethods[] = {
-    {"test", &searchio_test, METH_VARARGS, "Test that the searchio module is working."},
     {"tokenize", &searchio_tokenize, METH_VARARGS, "Obtain a viable list of tokens from a string."},
     {"createIndex", &searchio_createIndex, METH_VARARGS, "Create an on-disk representation of the provided index."},
     {"loadIndex", &searchio_loadIndex, METH_VARARGS, "Load an index from disk."},
@@ -68,10 +66,6 @@ PyMODINIT_FUNC initsearchio(void)
 }
 
 /* Method implementations */
-static PyObject *searchio_test(PyObject *self, PyObject *args)
-{
-    Py_RETURN_TRUE;
-}
 static PyObject *searchio_tokenize(PyObject *self, PyObject *args)
 {
     /* get the set of stopwords, and the string to tokenize */
