@@ -4,11 +4,13 @@ from BTrees.OOBTree import OOBTree
 import sys
 # need sqrt and floor so that skips can occur every floor(sqrt(L)) pageID's where L = #pageID's
 from math import sqrt# used for calculating skip pointers
+from math import log # used for calculating inverse document frequency (idf)
 import heapq # using heap to sort postings lists by length so we can begin ANDing with smallest list
 from porter_martin import PorterStemmer # instantiate stemmer to pass into tokenize
 from bool_parser import bool_expr_ast as bool_parse # provided boolean parser for python2.6
 
 from XMLparser import tokenize, create_stopwords_set
+from queryIndex_util import updateScores
 
 # index form: {'term': [df, [[pageID, wf, [position for position in page]] for each pageID]]}
 # SHOULD BE REPLACED WITH:
@@ -34,7 +36,7 @@ def reconstruct_Index(ii_filename):
 		# extract word and document frequency (df)
 		meta_data = l[0].split('*')
 		word = meta_data[0]
-		df = meta_data[1]
+		df = int(meta_data[1])
 
 		# build postings list from empty list
 		postings = []
@@ -43,12 +45,12 @@ def reconstruct_Index(ii_filename):
 			pageID = int(p[0])
 			wf = float(p[1])
 			positions = [int(pos) for pos in p[2].split()]
-			#posting = [pageID, wf, positions] 
-			posting = [pageID, positions]  
+			posting = [pageID, wf, positions] 
+			#posting = [pageID, positions]  
 			postings.append(posting)
 
-		#index[word] = [df, postings]
-		index[word] = postings
+		index[word] = [df, postings]
+		#index[word] = postings
 		line = ii_file.readline()
 
 	ii_file.close()
@@ -69,6 +71,9 @@ def positions_AND(positions_1, positions_2, i_difference):
 	posIndex_2 = 0
 	length_1 = len(positions_1)
 	length_2 = len(positions_2)
+	# instead of storing skip pointers, we use skip pointers by just indexing in sqrt(len(list)) ahead to check if we should skip
+	skip_1 = int(sqrt(length_1)) # precalculated skip for postings_1
+	skip_2 = int(sqrt(length_2)) # precalculated skip for postings_2
 
 	while (posIndex_1 < length_1) and (posIndex_2 < length_2):
 		position_1 = positions_1[posIndex_1]
@@ -82,21 +87,36 @@ def positions_AND(positions_1, positions_2, i_difference):
 			posIndex_2 += 1
 
 		elif (position_1+i_difference) < position_2:
-			posIndex_1 += 1
+			# we'll either skip ahead in positions_1 or just increase index by 1
+			skip_pointer = posIndex_1 + skip_1
+			# check that skip_pointer doesn't exceed length and if its worth skipping to
+			if (skip_pointer < length_1) and ((positions_1[skip_pointer] + i_difference) <= position_2):
+				# skip to the skip pointer
+				posIndex_1 = skip_pointer
+			else:
+				posIndex_1 += 1
 
 		else: # (position_1+i_difference > position_2)
-			posIndex_2 += 1
+			# we'll either skip ahead in positions_2 or just increase its index by 1
+			skip_pointer = posIndex_2 + skip_2
+			if (skip_pointer < length_2) and (positions_2[skip_pointer] <= (position_1 + i_difference)):
+				posIndex_2 = skip_pointer
+			else:
+				posIndex_2 += 1
 
 	return intersection
 
 # helper to both handle_BQ and handle_PQ -- handles the AND
-# takes two postings lists and 3rd parameter which for the purpose of this function can be interpreted as a boolean stating whether this is for handle_PQ or handle_BQ:
+# input: postings_1: current intersection with calculated pageID scores that postings2 should be merged into
+# 	  	 postings_2: postings list to be intersected into postings_1 -- still has raw wf's rather than idf*wf scores
+#		 idf: idf of word corresponding to postings_2
+#		 boolean stating whether this is for handle_PQ or handle_BQ:
 #			False (handle_BQ): is passed as 0 and means this is for the BQ_AND and there should be no further call to positional_AND
 #			True (handle_PQ): means any other value, which is passed in as the difference of the indecies of query1 and query2, for the sake of the positional_AND.
 #				--> If true, function uses helper procedure positional_AND 
 #		if true: returns the intersection over the pageID's
 #		if false: returns the intersection over the pageID's and positions (where position_2 directly after position_1)
-def postings_AND(postings_1, postings_2, i_difference):
+def postings_AND(postings_1, postings_2, idf, i_difference):
 	intersection = []  # Even if just matching PageID's, I want this to still be a full postings list rather than just pageIDs so that we can iterate on this function with ease
 	pageIndex_1 = 0
 	pageIndex_2 = 0
@@ -107,22 +127,20 @@ def postings_AND(postings_1, postings_2, i_difference):
 	skip_2 = int(sqrt(length_2)) # precalculated skip for postings_2
 
 	while (pageIndex_1 < length_1) and (pageIndex_2 < length_2):
-		post_1 = postings_1[pageIndex_1]
-		post_2 = postings_2[pageIndex_2]
-		pageID_1 = post_1[0]
-		pageID_2 = post_2[0]
+		(pageID_1, score_1, positions_1) = postings_1[pageIndex_1]
+		(pageID_2, wf_2, positions_2) = postings_2[pageIndex_2]
+
 		if pageID_1 == pageID_2: # pageID's match!
+			score = score_1 + (idf*wf_2)
 			if not i_difference: 
-				# we're just ANDing over pageIDs so we reached a match
-				intersection.append(post_1) # keep that post since it belongs in intersection
+				# we're just ANDing over pageIDs so we reached a match -- keep that post since it belongs in intersection
+				intersection.append([pageID_1, score, positions_1]) # update score, positions irrelevant
 			else: 
 				# we're also matching positions, so keep checking for match in positions
-				positions_1 = post_1[1]
-				positions_2 = post_2[1]
 				position_intersection = positions_AND(positions_1, positions_2, i_difference) # take intersection of positions lists
 				# only append to intersection if positions_intersection is a nonempty list
 				if position_intersection:
-					intersection.append([pageID_1, position_intersection])
+					intersection.append([pageID_1, score, position_intersection]) 
 			# increment both page indecies
 			pageIndex_1 += 1 
 			pageIndex_2 += 1
@@ -145,55 +163,60 @@ def postings_AND(postings_1, postings_2, i_difference):
 				pageIndex_2 += 1
 	return intersection
 
-# helper to handle_PQ -- handles the AND
-# takes two postings lists and returns the intersection over the pageID's and positions 
-# takes as 3rd parameter: difference in indecies of words in query that correspond to the postings.  This is for the purpose of the positional ANDing
-#	(each entry (pageID, position) in postings_1 that appears in intersection, has a corresponding entry (pageID, position+i_difference) that appears in postings_2)
-# uses helper function postings_AND which then also uses positions_AND
-def PQ_AND(postings_1, postings_2, i_difference):
-	return postings_AND(postings_1, postings_2, i_difference)
+# helper to handle_PQ -- handles the AND & uses helper function postings_AND
+# input: postings_1: current intersection with calculated pageID scores that postings2 should be merged into
+# 	  	 postings_2: postings list to be intersected into postings_1 -- still has raw wf's rather than idf*wf scores
+#		 idf: idf of word corresponding to postings_2
+# 		 takes as 4th parameter: difference in indecies of words in query that correspond to the postings.  This is for the purpose of the positional ANDing
+#				(each entry (pageID, position) in postings_1 that appears in intersection, has a corresponding entry (pageID, position+i_difference) that appears in postings_2)
+# output: intersection with updated scores
+def PQ_AND(postings_1, postings_2, idf, i_difference):
+	return postings_AND(postings_1, postings_2, idf, i_difference)
 
-# helper to handle_BQ -- handles the AND
-# takes two postings lists and returns the intersection over the pageID's
-# uses helper function postings_AND
-def BQ_AND(postings_1, postings_2):
-	return postings_AND(postings_1, postings_2, 0)
+# helper to handle_BQ -- handles the AND & uses helper function postings_AND
+# input: postings_1: current intersection with calculated pageID scores that postings2 should be merged into
+# 	  	 postings_2: postings list to be intersected into postings_1 -- still has raw wf's rather than idf*wf scores
+#		 idf: idf of word corresponding to postings_2
+# output: intersection with updated scores
+def BQ_AND(postings_1, postings_2, idf):
+	return postings_AND(postings_1, postings_2, idf, 0)
 
 
-def postings_OR(postings_1, postings_2):
-	# if one of the postings is empty, trivially return other postings list
-	if not postings_1:
-		return postings_2
-	if not postings_2:
-		return postings_1
-
+# input: postings1: postings list to merge second postings list into -- its posts already have correctly calculated scores for documents
+#		 postings2: postings list to merge into postings1
+#		 idf: inverse document frequency of term corresponding to postings2
+# output: union of postings1 and postings2 where each item is a tuple (pageID, updated weight, [positions list])
+def postings_OR(postings_1, postings_2, idf):
 	union = [] # I want this to still be a full postings list rather than just pageIDs so that we can continue to utilize skip-pointers in further iterations
 	i_1 = 0
 	i_2 = 0
 	while 1:
 		# check if we're at the end of one of the postings lists
 		if i_1 == len(postings_1):
-			# tack on the rest of the postings_2 to union and we're done
+			# tack on the rest of the postings_2 (after wf's converted to idf.wf doc scores) to union and we're done
 			while i_2 < len(postings_2):
-				if postings_1[i_1-1][0] != postings_2[i_2][0]:
-					union.append(postings_2[i_2])
+				post_2 = postings_2[i_2]
+				post_2[1] *= idf # score = idf*wf
+				union.append(post_2)
 				i_2 += 1
 			break
 
 		if i_2 == len(postings_2):
-			# tack on the rest of the postings_1 to union and we're done
+			# tack on the rest of the postings_1 to union and we're done -- we already know that it has correctly calculated document scores
 			while i_1 < len(postings_1):
-				if postings_2[i_2-1][0] != postings_1[i_1][0]:
-					union.append(postings_1[i_1])
+				union.append(postings_1[i_1])
 				i_1 += 1
 			break
 		# verified we're not at the end of one of the postings lists
 		post_1 = postings_1[i_1]
-		post_2 = postings_2[i_2]
+		post_2 = postings_2[i_2]  # looks like (pageID, wf, [positions])
 		pageID_1 = post_1[0]
 		pageID_2 = post_2[0]
+
+		toAdd = idf*post_2[1] # idf*wf
 		
 		if pageID_1 == pageID_2:
+			post_1[1] += toAdd
 			union.append(post_1)
 			i_1 += 1
 			i_2 += 1
@@ -201,6 +224,7 @@ def postings_OR(postings_1, postings_2):
 			union.append(post_1)
 			i_1 += 1
 		else: #pageID_1 > pageID_2
+			post_2[1] = toAdd
 			union.append(post_2)
 			i_2 += 1
 
@@ -210,15 +234,17 @@ def postings_OR(postings_1, postings_2):
 #		 inverted index (index)
 #		 porter stemmer (stemmer)
 # 		 boolean expression (expr) -- that this function is called recursively on
-# output: postings-list that satisfies boolean expression (expr)
-def handle_BQ_expr(stopwords_set, index, stemmer, expr):
+# output: tuple (postings-list, idf): postings-list that satisfies boolean expression (expr)
+def handle_BQ_expr(stopwords_set, index, stemmer, expr, N):
 	# base case
 	if type(expr) == str:
-		token = tokenize(stopwords_set, stemmer, expr)[0]
+		token = tokenize(stopwords_set, stemmer, expr, False)[0]
 		if token in index:
-			return index[token]
+			(df, postings) = index[token]
+			idf = log((N/df),2)
+			return (postings, idf)
 		else:
-			return []
+			return ([], 1)
 	else:
 		operator = expr[0] # AND or OR
 		arguments = expr[1] # list of boolean expressions (base case is that they're just words)
@@ -226,47 +252,44 @@ def handle_BQ_expr(stopwords_set, index, stemmer, expr):
 
 		if operator == 'OR':
 			for arg in arguments:
-				base_postings = postings_OR(base_postings, handle_BQ_expr(stopwords_set, index, stemmer, arg))
-			return base_postings
+				(postings, idf) = handle_BQ_expr(stopwords_set, index, stemmer, arg, N)
+				base_postings = postings_OR(base_postings, postings, idf) 
+			return (base_postings, 1)
 		else: # operator == 'AND'
 			heap = [] # want to first sort arguments postings by length so we can being ANDing with smallest list
 			for arg in arguments:
-				postings = handle_BQ_expr(stopwords_set, index, stemmer, arg)
-				heapq.heappush(heap, (len(postings), postings))
+				(postings, idf) = handle_BQ_expr(stopwords_set, index, stemmer, arg, N)
+				heapq.heappush(heap, (len(postings), (idf, postings)))
 
-			base_postings = heapq.heappop(heap)[1]
+			(idf, base_postings) = heapq.heappop(heap)[1]
 			heap_len = len(heap)
 			for j in range(len(heap)):
-				postings = heapq.heappop(heap)[1]
-				base_postings = BQ_AND(base_postings, postings)
-			return base_postings
+				(idf, postings) = heapq.heappop(heap)[1]
+				base_postings = BQ_AND(base_postings, postings, idf)
+			return (base_postings, 1)
 			 
 # input: set of stopwords (stopwords_set)
 #		 inverted index (index)
 #		 porter stemmer (stemmer)
 # 		 query (query) -- from which we obtain list of stream of words (stream_list) [t0, t1, t2, ..., tk]
-def handle_BQ(stopwords_set, index, stemmer, query):
+#		 total documents (N)  --- necessary to compute idf
+def handle_BQ(stopwords_set, index, stemmer, query, N):
 	# ('OR', ['Her', ('OR', ['This', 'That']), ('OR', ['This', 'That'])])
-
 	# for now we assume we get well formed Boolean queries with no stopwords
 	bool_expr = bool_parse(query)
-	postings = handle_BQ_expr(stopwords_set, index, stemmer, bool_expr)
-	docs = ''
-	for k in range(len(postings)):
-		if k > 0:
-			docs += ' '
-		docs += str(postings[k][0])
-	return docs
+	(postings, idf) = handle_BQ_expr(stopwords_set, index, stemmer, bool_expr, N)
+	return postings
 
 # input: set of stopwords (stopwords_set)
 #		 inverted index (index)
 #		 porter stemmer (stemmer)
 # 		 query (query) -- from which we obtain list of stream of words (stream_list) [t0, t1, t2, ..., tk]
-# output: prints out the matching documents in order of pageID
+#		 total documents (N)  --- necessary to compute idf
+# output: list of posts of the matching documents in order of pageID
 # 			for PQ matching documents contain subsequence [t1, t2, .., tk] in this order with adjacent terms
-def handle_PQ(stopwords_set, index, stemmer, query):
+def handle_PQ(stopwords_set, index, stemmer, query, N):
 	# obtain stream of terms from query -- also handles removing operators "" and newline '\n'
-	stream_list = tokenize(stopwords_set, stemmer, query)
+	stream_list = tokenize(stopwords_set, stemmer, query, True)
 	# initialize variables in greater scope
 	intersection = []
 	tup = None
@@ -276,42 +299,37 @@ def handle_PQ(stopwords_set, index, stemmer, query):
 		word = stream_list[i]
 		if not word in index: 
 			# word isn't in index, so we can satisfy positional query -- return no documents
-			return ''
+			return []
 		else:
 			# otherwise, store postings in heap, where heap sorts by length of postings.  Also need to store index of work in query for the positional AND
-			postings = index[word]
-			tup = (len(postings), (i, postings)) # stores in heap: (len(postings), (indexInQuery, postings))
+			(df, postings) = index[word]
+			idf = log((N/df),2)
+			tup = (len(postings), (i, postings, idf)) # stores in heap: (len(postings), (indexInQuery, idf, postings))
 			heapq.heappush(heap, tup)
 
 	num_tokens = len(heap)
 	i_1 = 0
 	i_2 = 0
 	if not num_tokens:
-		return ''
+		return [] # returns empty list
 	else:
-		tup = heapq.heappop(heap)
-		i_1 = tup[1][0]
-		intersection = tup[1][1]
+		tup = heapq.heappop(heap) # tup = (len(postings), (indexInQuery, idf, postings))
+		(i_1, idf, postings) = tup[1]
+		# get inital intersection
+		intersection = updateScores(postings, idf) # update scores takes normal postings list and multiplies each wf by idf to get score
 
 	for j in range(1, num_tokens):
-		tup = heapq.heappop(heap)
-		i_2 = tup[1][0]
-		postings = tup[1][1]
+		tup = heapq.heappop(heap) # tup = (len(postings), (indexInQuery, idf, postings))
+		(i_2, idf, postings) = tup[1]
 		# update intersection by intersecting on current intersection, and newly retrieved postings list.  
-		intersection = PQ_AND(intersection, postings, i_2-i_1) # We send in the difference of the indecies of the words in query for the positional AND
+		intersection = PQ_AND(intersection, postings, idf, i_2-i_1) # We send in the difference of the indecies of the words in query for the positional AND
 		if not intersection:
 			# if nothing is left in intersection, can break out of loop now with nothing to return
-			return ''
+			return []
 		else:
 			i_1 = i_2 # otherwise update our indecies for the purpose of the parameters for positional AND
 
-	docs = ''
-	for k in range(len(intersection)):
-		if k > 0:
-			docs += ' '
-		docs += str(intersection[k][0])
-
-	return docs
+	return intersection
 
 
 
@@ -319,62 +337,87 @@ def handle_PQ(stopwords_set, index, stemmer, query):
 #		 inverted index (index)
 #		 porter stemmer (stemmer)
 # 		 query (query) -- from which we obtain list of stream of words (stream_list) [t0, t1, t2, ..., tk]
-# output: prints out the matching documents in order of pageID
+#		 total documents (N)  --- necessary to compute idf
+# output: lists of posts of matching documents in order of pageID
 # 			for FTQ matching documents contain at least one word whose stemmed version is one of the ti's
-def handle_FTQ(stopwords_set, index, stemmer, query):
+def handle_FTQ(stopwords_set, index, stemmer, query, N):
 	# turn query into stream of tokens
-	stream_list = tokenize(stopwords_set, stemmer, query)
+	stream_list = tokenize(stopwords_set, stemmer, query, True)
 	stream_length = len(stream_list)
 	if not stream_length: # make sure we got some tokens out of that query
-		return ''
+		return []
 	# initialize union to empty list
 	union = []
 
 	for i in range(stream_length):
-		word = stream_list[i]
-		if word in index:
-			union = postings_OR(union, index[word])
-
-	documents = ''
-	for j in range(len(union)):
-		if j > 0:
-			documents += ' '
-		pageID = union[j][0]
-		documents += str(pageID)	
-	return documents
+		term = stream_list[i]
+		if term in index:
+			(df, postings) = index[term]
+			idf = log((N/df),2)
+			union = postings_OR(union, postings, idf)
+	return union
+ 
 
 # input: set of stopwords (stopwords_set)
 #		 inverted index (index)
 #		 porter stemmer (stemmer)
 # 		 query (query) -- from which we obtain list of stream of words (stream_list) [t0, t1, t2, ..., tk]
+#		 total documents (N)  --- necessary to compute idf
 # helper routine to queryIndex -- determines type of query and passes off to further handling
-def handle_query(stopwords_set, index, stemmer, query):
+def handle_query(stopwords_set, index, stemmer, query, N):
 	# determine query type (OWQ, FTQ, PQ, BQ)
 	if ('AND' in query or 'OR' in query or ')' in query or '(' in query):  # note that the boolean parser strips off trailing '\n'
 		# handle BQ in its own way
-		return handle_BQ(stopwords_set, index, stemmer, query)
+		return handle_BQ(stopwords_set, index, stemmer, query, N)
 	
 	if (query[0]=='"' and query[len(query)-2]=='"' and query[len(query)-1]=='\n') or (query[0]=='"' and query[len(query)-1]=='"'): # it's a PQ
-		return handle_PQ(stopwords_set, index, stemmer, query)
+		return handle_PQ(stopwords_set, index, stemmer, query, N)
 		
 	else: # it's a OWQ or FTQ
-		return handle_FTQ(stopwords_set, index, stemmer, query)
+		return handle_FTQ(stopwords_set, index, stemmer, query, N)
+
+# helper to queryIndex main function that sorts the posts retrieved
+# creates a max-heap -- stuffs all the posts into the heap, and then pops them off and puts the pageID in string form
+# input: list of posts sorted by pageID
+# output: string of pageIDs sorted by document score
+def sort_posts(posts):
+	heap = []
+	for j in range(len(posts)):
+		tup = posts[j] # (pageID, score, [positions list])
+		heapq.heappush(heap, ((-1)*tup[1], str(tup[0]))) # push to heap: (pageID, -score) -- using (-score) to turn minheap to maxheap
+	
+	documents = ''
+	count = 0
+	for i in range(14):
+	#while 1:
+		if len(heap) == 0:
+			break
+		if count > 0:
+			documents += ' '
+		count += 1
+		next = heapq.heappop(heap)
+		#documents += next[1]
+		documents += ("("+next[1]+","+str(-1*next[0])+")")
+	return documents
 
 # main function
 def queryIndex(stopwords_filename, ii_filename, ti_filename):
+	# rebuild index from file, and minipulate it into a permuterm index for wildcard queries.  Rebuild stopwords set from file
 	(index,N) = reconstruct_Index(ii_filename)
+	permutermIndex = permutermIndex(index) 
 	stopwords_set = create_stopwords_set(stopwords_filename)
 	# instantiate stemmer to pass into tokenize
 	stemmer = PorterStemmer()
+	#print("ready..")
 	while 1: # read queries from standard input until user enters CTRL+D
-		#print(count)
 		try:
 			query = sys.stdin.readline()
 		except KeyboardInterrupt:
 			break
 		if not query:
 			break
-		documents = handle_query(stopwords_set, index, stemmer, query)
+		posts = handle_query(stopwords_set, index, stemmer, query, N)
+		documents = sort_posts(posts)
 		print(documents)
 	return	
 

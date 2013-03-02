@@ -31,9 +31,12 @@ def replace(textString):
             t += ' '
     return t
 
-# input: string to turn into list of tokens
+# input: set of stopwords to weed out (stopWords_set)
+#        porter stemmer to handle stemming (stemmer)
+#        text string to turn into list of tokens (textString)
+#        boolean (keepStar) if true: keep '*' in token, else: don't keep '*'
 # output: list of tokens
-def tokenize(stopWords_set, stemmer, textString):
+def tokenize(stopWords_set, stemmer, textString, keepStar):
     token_list = []
    
     # 1) lowercase all the words in the stream, 
