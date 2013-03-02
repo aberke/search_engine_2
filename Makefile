@@ -9,3 +9,4 @@ buildit:
 clean:
 	cd searchio; python setup.py clean
 	rm -f searchio.so
+	rm -rf searchio/build
