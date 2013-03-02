@@ -77,8 +77,9 @@ static PyObject *searchio_tokenize(PyObject *self, PyObject *args)
     /* get the set of stopwords, and the string to tokenize */
     PyObject *stopwords = NULL;
     const char *textString = NULL;
+    int keepStar = 0;
     
-    if (!PyArg_ParseTuple(args, "Os", &stopwords, &textString))
+    if (!PyArg_ParseTuple(args, "Osi", &stopwords, &textString, &keepStar))
         return NULL;
     
     /* loop over the characters in textString to normalize it */
@@ -88,7 +89,7 @@ static PyObject *searchio_tokenize(PyObject *self, PyObject *args)
     for (i = 0; i < len; i++)
     {
         char c = tolower(textString[i]);
-        if (isalnum(c))
+        if (isalnum(c) || (keepStar && c == '*'))
             searchio_tokenizerBuffer[i] = c;
         else
         {
