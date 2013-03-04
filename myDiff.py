@@ -37,8 +37,6 @@ def thisDiff(fname1, fname2):
     line1 = f1.readline()
     line2 = f2.readline()
     while line1 or line2:
-        if count >= 9:
-            break
         line1 = line1.split()
         line2 = line2.split()
         count += 1

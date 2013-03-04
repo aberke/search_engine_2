@@ -298,8 +298,8 @@ def handle_PQ(stopwords_set, index, query, N):
 
 	return intersection
 
-
-
+# delete
+queryTerms = {}
 # input: set of stopwords (stopwords_set)
 #		 inverted index (index)
 # 		 query (query) -- from which we obtain list of stream of words (stream_list) [t0, t1, t2, ..., tk]
@@ -307,6 +307,8 @@ def handle_PQ(stopwords_set, index, query, N):
 # output: lists of posts of matching documents in order of pageID
 # 			for FTQ matching documents contain at least one word whose stemmed version is one of the ti's
 def handle_FTQ(stopwords_set, index, query, N):
+	print("********")
+	print(query)
 	# turn query into stream of tokens
 	stream_list = searchio.tokenize(stopwords_set, query, True)
 	stream_length = len(stream_list)
@@ -317,6 +319,13 @@ def handle_FTQ(stopwords_set, index, query, N):
 
 	for i in range(stream_length):
 		term = stream_list[i]
+		if term in queryTerms:
+			# queryTerms[term] += 1
+			# print("ALREADY IN QUERY TERMS "+str(queryTerms[term])+" times $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+			# print(term)
+			# print("********")
+		else:
+			queryTerms[term] = 0
 		if term in index:
 			(df, postings) = index[term]
 			idf = log((N/df),2)
@@ -347,23 +356,25 @@ def handle_query(stopwords_set, index, query, N):
 # output: string of pageIDs sorted by document score
 def sort_posts(posts):
 	heap = []
+	# when documents have the same score I want to order them in the same order as the TA's -- is that by increasing document ID?
+	# SO FAR IT SEEMS THAT WHEN TWO DOCS HAVE SAME SCORE TAS ORDER THEM WITH LARGET DOCID FIRST
 	for j in range(len(posts)):
 		tup = posts[j] # (pageID, score, [positions list])
-		heapq.heappush(heap, ((-1)*tup[1], str(tup[0]))) # push to heap: (pageID, -score) -- using (-score) to turn minheap to maxheap
+		# push to heap: [-score, -pageID, pageID] -- using (-)*score to turn minheap to maxheap and using (-1)*pageID in case same score and higher pageID should be first
+		entry = [(-1)*tup[1], (-1)*tup[0], str(tup[0])]
+		heapq.heappush(heap, entry) 
 	
 	documents = ''
-	count = 0
 	for i in range(10):
-	#while 1:
 		if len(heap) == 0:
 			break
-		if count > 0:
+		if i > 0:
 			documents += ' '
-		count += 1
-		next = heapq.heappop(heap)
-		documents += next[1]
+		next = heapq.heappop(heap) # next = entry [-score, -pageID, str(pageID)]
+		documents += next[2]
 		#documents += ("("+next[1]+","+str(-1*next[0])+")")
 	return documents
+
 
 # main function
 def queryIndex(stopwords_filename, ii_filename, ti_filename):
