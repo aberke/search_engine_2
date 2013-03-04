@@ -6,12 +6,13 @@ import sys
 from math import sqrt# used for calculating skip pointers
 from math import log # used for calculating inverse document frequency (idf)
 import heapq # using heap to sort postings lists by length so we can begin ANDing with smallest list
-from porter_martin import PorterStemmer # instantiate stemmer to pass into tokenize
 from bool_parser import bool_expr_ast as bool_parse # provided boolean parser for python2.6
 
 from XMLparser import tokenize, create_stopwords_set
 from queryIndex_util import updateScores
 from wildcard import permutermIndex, wildcard
+
+import searchio  # import our own optimized I/O module
 
 # index form: {'term': [df, [[pageID, wf, [position for position in page]] for each pageID]]}
 # SHOULD BE REPLACED WITH:
@@ -23,39 +24,7 @@ from wildcard import permutermIndex, wildcard
 # input: filename of inverted index file
 # output: inverted index, N (total number of documents)
 def reconstruct_Index(ii_filename):
-	# reconstruct invertedIndex from file starting with empty dictionary
-	index = {} 
-	ii_file = open(ii_filename)
-	# retrieve N = total #documents, which was printed at the top of the page
-	N = int((ii_file.readline()).split()[0])
-
-	line = ii_file.readline()
-	while line != '': # read to EOF
-		# TODO: REPLACE THIS WITH MORE EFFICIENT PARSER
-		l = line.split('&') # split along the postings delimeter   [word, [post0],[post1],...]
-		
-		# extract word and document frequency (df)
-		meta_data = l[0].split('*')
-		word = meta_data[0]
-		df = int(meta_data[1])
-
-		# build postings list from empty list
-		postings = []
-		for i in range(1, len(l)):
-			p = l[i].split('%')
-			pageID = int(p[0])
-			wf = float(p[1])
-			positions = [int(pos) for pos in p[2].split()]
-			posting = [pageID, wf, positions] 
-			#posting = [pageID, positions]  
-			postings.append(posting)
-
-		index[word] = [df, postings]
-		#index[word] = postings
-		line = ii_file.readline()
-
-	ii_file.close()
-	return (index, N)
+	return searchio.loadSparseIndex(ii_filename)
 
 # helper functions to 
 # input: two positions lists: positions_1 corresponds to the positions list of the first word, positions_2 corresponds to the positions list of second word
@@ -233,13 +202,12 @@ def postings_OR(postings_1, postings_2, idf):
 
 # input: set of stopwords (stopwords_set)
 #		 inverted index (index)
-#		 porter stemmer (stemmer)
 # 		 boolean expression (expr) -- that this function is called recursively on
 # output: tuple (postings-list, idf): postings-list that satisfies boolean expression (expr)
-def handle_BQ_expr(stopwords_set, index, stemmer, expr, N):
+def handle_BQ_expr(stopwords_set, index, expr, N):
 	# base case
 	if type(expr) == str:
-		token = tokenize(stopwords_set, stemmer, expr, False)[0]
+		token = searchio.tokenize(stopwords_set, expr, False)[0]
 		if token in index:
 			(df, postings) = index[token]
 			idf = log((N/df),2)
@@ -253,13 +221,13 @@ def handle_BQ_expr(stopwords_set, index, stemmer, expr, N):
 
 		if operator == 'OR':
 			for arg in arguments:
-				(postings, idf) = handle_BQ_expr(stopwords_set, index, stemmer, arg, N)
+				(postings, idf) = handle_BQ_expr(stopwords_set, index, arg, N)
 				base_postings = postings_OR(base_postings, postings, idf) 
 			return (base_postings, 1)
 		else: # operator == 'AND'
 			heap = [] # want to first sort arguments postings by length so we can being ANDing with smallest list
 			for arg in arguments:
-				(postings, idf) = handle_BQ_expr(stopwords_set, index, stemmer, arg, N)
+				(postings, idf) = handle_BQ_expr(stopwords_set, index, arg, N)
 				heapq.heappush(heap, (len(postings), (idf, postings)))
 
 			(idf, base_postings) = heapq.heappop(heap)[1]
@@ -271,26 +239,24 @@ def handle_BQ_expr(stopwords_set, index, stemmer, expr, N):
 			 
 # input: set of stopwords (stopwords_set)
 #		 inverted index (index)
-#		 porter stemmer (stemmer)
 # 		 query (query) -- from which we obtain list of stream of words (stream_list) [t0, t1, t2, ..., tk]
 #		 total documents (N)  --- necessary to compute idf
-def handle_BQ(stopwords_set, index, stemmer, query, N):
+def handle_BQ(stopwords_set, index, query, N):
 	# ('OR', ['Her', ('OR', ['This', 'That']), ('OR', ['This', 'That'])])
 	# for now we assume we get well formed Boolean queries with no stopwords
 	bool_expr = bool_parse(query)
-	(postings, idf) = handle_BQ_expr(stopwords_set, index, stemmer, bool_expr, N)
+	(postings, idf) = handle_BQ_expr(stopwords_set, index, bool_expr, N)
 	return postings
 
 # input: set of stopwords (stopwords_set)
 #		 inverted index (index)
-#		 porter stemmer (stemmer)
 # 		 query (query) -- from which we obtain list of stream of words (stream_list) [t0, t1, t2, ..., tk]
 #		 total documents (N)  --- necessary to compute idf
 # output: list of posts of the matching documents in order of pageID
 # 			for PQ matching documents contain subsequence [t1, t2, .., tk] in this order with adjacent terms
-def handle_PQ(stopwords_set, index, stemmer, query, N):
+def handle_PQ(stopwords_set, index, query, N):
 	# obtain stream of terms from query -- also handles removing operators "" and newline '\n'
-	stream_list = tokenize(stopwords_set, stemmer, query, True)
+	stream_list = searchio.tokenize(stopwords_set, query, True)
 	# initialize variables in greater scope
 	intersection = []
 	tup = None
@@ -336,14 +302,13 @@ def handle_PQ(stopwords_set, index, stemmer, query, N):
 
 # input: set of stopwords (stopwords_set)
 #		 inverted index (index)
-#		 porter stemmer (stemmer)
 # 		 query (query) -- from which we obtain list of stream of words (stream_list) [t0, t1, t2, ..., tk]
 #		 total documents (N)  --- necessary to compute idf
 # output: lists of posts of matching documents in order of pageID
 # 			for FTQ matching documents contain at least one word whose stemmed version is one of the ti's
-def handle_FTQ(stopwords_set, index, stemmer, query, N):
+def handle_FTQ(stopwords_set, index, query, N):
 	# turn query into stream of tokens
-	stream_list = tokenize(stopwords_set, stemmer, query, True)
+	stream_list = searchio.tokenize(stopwords_set, query, True)
 	stream_length = len(stream_list)
 	if not stream_length: # make sure we got some tokens out of that query
 		return []
@@ -361,21 +326,20 @@ def handle_FTQ(stopwords_set, index, stemmer, query, N):
 
 # input: set of stopwords (stopwords_set)
 #		 inverted index (index)
-#		 porter stemmer (stemmer)
 # 		 query (query) -- from which we obtain list of stream of words (stream_list) [t0, t1, t2, ..., tk]
 #		 total documents (N)  --- necessary to compute idf
 # helper routine to queryIndex -- determines type of query and passes off to further handling
-def handle_query(stopwords_set, index, stemmer, query, N):
+def handle_query(stopwords_set, index, query, N):
 	# determine query type (OWQ, FTQ, PQ, BQ)
 	if ('AND' in query or 'OR' in query or ')' in query or '(' in query):  # note that the boolean parser strips off trailing '\n'
 		# handle BQ in its own way
-		return handle_BQ(stopwords_set, index, stemmer, query, N)
+		return handle_BQ(stopwords_set, index, query, N)
 	
 	if (query[0]=='"' and query[len(query)-2]=='"' and query[len(query)-1]=='\n') or (query[0]=='"' and query[len(query)-1]=='"'): # it's a PQ
-		return handle_PQ(stopwords_set, index, stemmer, query, N)
+		return handle_PQ(stopwords_set, index, query, N)
 		
 	else: # it's a OWQ or FTQ
-		return handle_FTQ(stopwords_set, index, stemmer, query, N)
+		return handle_FTQ(stopwords_set, index, query, N)
 
 # helper to queryIndex main function that sorts the posts retrieved
 # creates a max-heap -- stuffs all the posts into the heap, and then pops them off and puts the pageID in string form
@@ -407,8 +371,6 @@ def queryIndex(stopwords_filename, ii_filename, ti_filename):
 	(index,N) = reconstruct_Index(ii_filename)
 	permutermIndex = permutermIndex(index) 
 	stopwords_set = create_stopwords_set(stopwords_filename)
-	# instantiate stemmer to pass into tokenize
-	stemmer = PorterStemmer()
 	#print("ready..")
 	while 1: # read queries from standard input until user enters CTRL+D
 		try:
@@ -417,7 +379,7 @@ def queryIndex(stopwords_filename, ii_filename, ti_filename):
 			break
 		if not query:
 			break
-		posts = handle_query(stopwords_set, index, stemmer, query, N)
+		posts = handle_query(stopwords_set, index, query, N)
 		documents = sort_posts(posts)
 		print(documents)
 	return	
