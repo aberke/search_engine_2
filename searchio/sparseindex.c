@@ -219,7 +219,10 @@ PyObject *SparseIndex_GetItem(PyObject *o, PyObject *key)
     /* check if we have postings for the item */
     PyObject *postingsResult = PyDict_GetItemString(term, "postings");
     if (postingsResult != NULL)
+    {
+        Py_INCREF(postingsResult);
         return postingsResult;
+    }
     
     /* looks like we have to lazily load the postings; start by seeking to the right place */
     size_t offset = PyInt_AsUnsignedLongMask(PyDict_GetItemString(term, "postingsOffset"));
@@ -266,6 +269,7 @@ PyObject *SparseIndex_GetItem(PyObject *o, PyObject *key)
     PyList_SetItem(termEntry, 1, postings);
     PyDict_SetItemString(term, "postings", termEntry);
     
+    Py_INCREF(termEntry);
     return termEntry;
 }
 int SparseIndex_Contains(PyObject *o, PyObject *value)
