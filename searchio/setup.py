@@ -3,7 +3,7 @@
 
 from distutils.core import setup, Extension
 
-searchio = Extension("searchio", sources = ["searchio.c", "stemmer.c"])
+searchio = Extension("searchio", sources = ["searchio.c", "stemmer.c", "sparseindex.c"])
 
 setup(
     name = "searchio",

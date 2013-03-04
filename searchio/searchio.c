@@ -3,41 +3,11 @@
     A Python module for interacting with CS158 Search Engine indices.
 */
 
-#include <Python.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include "searchio.h"
 #include "stemmer.h"
-
-/* Constants */
-#define SEARCHIO_TOKENIZER_BUFFER_SIZE 1024 * 1024
-#define SEARCHIO_WF_SCALE 100000
-
-/* Handy macros */
-#define SEARCHIO_MAX(a, b) ((a < b) ? b : a)
-#define SEARCHIO_MIN(a, b) ((a > b) ? b : a)
-
-/* Index file structures */
-#pragma pack(push, 1)
-typedef struct searchio_index_header {
-    uint32_t numDocuments;
-    uint32_t numTerms;
-    uint32_t postingsStart;
-} searchio_index_header_t;
-
-typedef struct searchio_index_term {
-    uint32_t postingsOffset;
-    uint32_t df;
-    uint32_t numDocumentsInPostings;
-    uint16_t termLength;
-} searchio_index_term_t;
-
-typedef struct searchio_index_posting {
-    uint32_t pageID;
-    uint32_t wf;
-    uint32_t numPositions;
-} searchio_index_posting_t;
-
-#pragma pack(pop)
+#include "sparseindex.h"
 
 /* Global variables */
 static char *searchio_tokenizerBuffer = NULL;
@@ -46,12 +16,14 @@ static char *searchio_tokenizerBuffer = NULL;
 static PyObject *searchio_tokenize(PyObject *self, PyObject *args);
 static PyObject *searchio_createIndex(PyObject *self, PyObject *args);
 static PyObject *searchio_loadIndex(PyObject *self, PyObject *args);
+static PyObject *searchio_loadSparseIndex(PyObject *self, PyObject *args);
 
 /* Module method table */
 static PyMethodDef SearchioMethods[] = {
     {"tokenize", &searchio_tokenize, METH_VARARGS, "Obtain a viable list of tokens from a string."},
     {"createIndex", &searchio_createIndex, METH_VARARGS, "Create an on-disk representation of the provided index."},
     {"loadIndex", &searchio_loadIndex, METH_VARARGS, "Load an index from disk."},
+    {"loadSparseIndex", &searchio_loadSparseIndex, METH_VARARGS, "Load only the terms of an index from disk, and return an object that reads postings lists on demand."},
     {NULL, NULL, 0, NULL}
 };
 
@@ -61,8 +33,17 @@ PyMODINIT_FUNC initsearchio(void)
     /* initialize the tokenizer buffer */
     searchio_tokenizerBuffer = (char *)malloc(sizeof(char) * SEARCHIO_TOKENIZER_BUFFER_SIZE);
     
+    /* initialize the SparseIndex type */
+    SparseIndexType.tp_new = PyType_GenericNew;
+    if (PyType_Ready(&SparseIndexType) < 0)
+        return;
+    
     /* initialize the module */
-    Py_InitModule("searchio", SearchioMethods);
+    PyObject *m = Py_InitModule("searchio", SearchioMethods);
+    
+    /* register the SparseIndex type */
+    Py_INCREF(&SparseIndexType);
+    PyModule_AddObject(m, "SparseIndex", (PyObject *)&SparseIndexType);
 }
 
 /* Method implementations */
@@ -365,4 +346,30 @@ static PyObject *searchio_loadIndex(PyObject *self, PyObject *args)
     free(postingsBuf);
     
     return PyTuple_Pack(2, result, PyLong_FromUnsignedLong(header.numDocuments));
+}
+static PyObject *searchio_loadSparseIndex(PyObject *self, PyObject *args)
+{
+    /* grab the filename */
+    const char *filename = NULL;
+    
+    if (!PyArg_ParseTuple(args, "s", &filename))
+        return NULL;
+    
+    /* open the file, read the header */
+    int fd = open(filename, O_RDONLY);
+    if (fd == -1)
+        return PyErr_SetFromErrno(PyExc_IOError);
+    
+    searchio_index_header_t header;
+    read(fd, (void *)&header, sizeof(header));
+    
+    /* normalize header values */
+    header.numDocuments = ntohl(header.numDocuments);
+    header.numTerms = ntohl(header.numTerms);
+    header.postingsStart = ntohl(header.postingsStart);
+    
+    /* construct and return a sparse index */
+    PyObject *index = SparseIndex_new(fd);
+    
+    return PyTuple_Pack(2, index, PyLong_FromUnsignedLong(header.numDocuments));
 }
