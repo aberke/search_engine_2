@@ -10,7 +10,7 @@ from bool_parser import bool_expr_ast as bool_parse # provided boolean parser fo
 
 from XMLparser import tokenize, create_stopwords_set
 from queryIndex_util import updateScores
-from wildcard import permutermIndex, wildcard
+from wildcard import permutermIndex_create, wildcard
 
 import searchio  # import our own optimized I/O module
 
@@ -316,7 +316,7 @@ def handle_FTQ(stopwords_set, index, query, N):
 	union = []
 
 	for i in range(stream_length):
-		t = stream_list[i]
+		term = stream_list[i]
 		if term in index:
 			(df, postings) = index[term]
 			idf = log((N/df),2)
@@ -353,7 +353,7 @@ def sort_posts(posts):
 	
 	documents = ''
 	count = 0
-	for i in range(14):
+	for i in range(10):
 	#while 1:
 		if len(heap) == 0:
 			break
@@ -361,15 +361,15 @@ def sort_posts(posts):
 			documents += ' '
 		count += 1
 		next = heapq.heappop(heap)
-		#documents += next[1]
-		documents += ("("+next[1]+","+str(-1*next[0])+")")
+		documents += next[1]
+		#documents += ("("+next[1]+","+str(-1*next[0])+")")
 	return documents
 
 # main function
 def queryIndex(stopwords_filename, ii_filename, ti_filename):
 	# rebuild index from file, and minipulate it into a permuterm index for wildcard queries.  Rebuild stopwords set from file
 	(index,N) = reconstruct_Index(ii_filename)
-	permutermIndex = permutermIndex(index) 
+	#permutermIndex = permutermIndex_create(index) 
 	stopwords_set = create_stopwords_set(stopwords_filename)
 	#print("ready..")
 	while 1: # read queries from standard input until user enters CTRL+D

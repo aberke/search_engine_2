@@ -12,7 +12,7 @@ def unrotateTerm(term):
 # creates permuterm index from dictionary index to aid with wildcard queries
 # input: dictionary (index)
 # output: permuterm-index in btree data structure (permutermIndex)
-def permutermIndex(index):
+def permutermIndex_create(index):
 	tree = OOBTree()
 	for term in index:  #'hello'
 		term += '$'		# 'hello$'
