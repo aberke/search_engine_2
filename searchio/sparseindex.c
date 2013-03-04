@@ -5,7 +5,6 @@
 
 #include "sparseindex.h"
 #include <fcntl.h>
-#include <sys/stat.h>
 #include "searchio.h"
 
 /* Object struct */
@@ -152,10 +151,7 @@ void SparseIndex_reconstruct(SparseIndex *self)
     /* create a buffer for reading terms */
     char *termBuffer = (char *)malloc(sizeof(char) * SEARCHIO_TOKENIZER_BUFFER_SIZE);
     
-    /* get some information on the document, read the header */
-    struct stat indexStat;
-    fstat(self->fd, &indexStat);
-    
+    /* read the header */
     searchio_index_header_t header;
     lseek(self->fd, 0, SEEK_SET);
     read(self->fd, (void *)&header, sizeof(header));
