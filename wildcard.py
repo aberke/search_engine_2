@@ -1,20 +1,22 @@
 # file that minipulates loaded dictionary into a permuterm index btree --- deals with the handling of WildCard queries
 from BTrees.OOBTree import OOBTree
 
-
-# example: 
-# therange = t.keys(min='c', max='d', excludemin=False, excludemax=True)
-# for i in therange:
+# takes in term that has been rotated around the $ at the end of term -- want to get back orinal term
+# input: rotated permuterm index term from which we want to retrieve real word -- ie input may be 'llo$he'
+# output: word represented by rotated term -- ie if input is 'llo$he' then should return 'hello'
+def unrotateTerm(term):
+	term = term.split('$')
+	return term[1]+term[0]
 
 
 # creates permuterm index from dictionary index to aid with wildcard queries
 # input: dictionary (index)
 # output: permuterm-index in btree data structure (permutermIndex)
-def permutermIndex(index):
+def permutermIndex_create(index):
 	tree = OOBTree()
 	for term in index:  #'hello'
 		term += '$'		# 'hello$'
-		for i in range(len(term)-1):
+		for i in range(len(term)):
 			tree[term] = True
 			term = term[1:]+term[0]
 	return tree
@@ -28,55 +30,34 @@ def permutermIndex(index):
 #	Look up this string in the permuterm index, where seeking n$m* (via a search tree) leads to rotations of (among others) the terms man and moron
 def wildcard(tree, term):
 	results = {}
-	
-
 	# rotate word
-	stars = 0 # for now counting the stars -- expect: 0 < stars <= 2 
-	length = len(term)
-
 	end = ''
 	middle = ''
 	front = ''
-	curr = front
-
-	for i in range(len(term)):
-		ch = term[i]
-		if ch == '*':
-			stars += 1
-			if stars == 1:
-				curr = end
-			elif stars == 2:
-				middle = end
-				end = ''
-			else: # more stars than expected: error
-				print("To many ("+str(stars)+") **************************")
-				return {}
-		else:
-			curr += ch
-	end += '$'
-	seek = end+front
-
+	term = term.split("*") #expect: 0 < stars = len(term)-1 <= 2 
 	
+	if len(term) == 1:
+		return {term[0]:True}
+	elif len(term) == 2:
+		front = term[0]
+		end = term[1] + '$'
+	elif len(term) == 3:
+		front = term[0]
+		middle = term[1]
+		end = term[2] + '$'
+	else:
+		print("ERROR IN WILDCARD -- TOO MANY **************** IN QUERY")
+		return results
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+	seek = end+front
+	seekMax = seek[:len(seek)-1]+chr(ord(seek[len(seek)-1])+1)
+	# get results
+	theRange = tree.keys(min=seek, max=seekMax, excludemin=False, excludemax=True)
+	for t in theRange:
+		if middle in t:
+			# found a match! but need to rotate it back into an actual term
+			results[unrotateTerm(t)] = True
+	return results
 
 
 
