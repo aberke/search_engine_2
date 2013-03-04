@@ -22,10 +22,10 @@ def create_stopwords_set(fname):
     f.close()
     return stopWords_set 
 
-def replace(textString):
+def replace(textString, keepStar):
     t = ''
     for ch in textString:
-        if ch.isalnum():
+        if ch.isalnum() or ((ch=='*') and keepStar):
             t += ch
         else:
             t += ' '
@@ -42,7 +42,7 @@ def tokenize(stopWords_set, stemmer, textString, keepStar):
     # 1) lowercase all the words in the stream, 
     textString = textString.lower()
     # 2) obtain the tokens (strings of alphanumeric characters [a-z0-9], terminated by a non alphanumeric character) 
-    textString = replace(textString)
+    textString = replace(textString, keepStar)
     # split textString into list of words   
     text_list = textString.split()
     # 3) filter out all the tokens matching element of stopwords list
