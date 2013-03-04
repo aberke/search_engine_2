@@ -11,6 +11,7 @@ from bool_parser import bool_expr_ast as bool_parse # provided boolean parser fo
 
 from XMLparser import tokenize, create_stopwords_set
 from queryIndex_util import updateScores
+from wildcard import permutermIndex, wildcard
 
 # index form: {'term': [df, [[pageID, wf, [position for position in page]] for each pageID]]}
 # SHOULD BE REPLACED WITH:
@@ -350,7 +351,7 @@ def handle_FTQ(stopwords_set, index, stemmer, query, N):
 	union = []
 
 	for i in range(stream_length):
-		term = stream_list[i]
+		t = stream_list[i]
 		if term in index:
 			(df, postings) = index[term]
 			idf = log((N/df),2)
