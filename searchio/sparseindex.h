@@ -26,5 +26,6 @@ void SparseIndex_reconstruct(SparseIndex *self);
 Py_ssize_t SparseIndex_Length(PyObject *o);
 PyObject *SparseIndex_GetItem(PyObject *o, PyObject *key);
 int SparseIndex_Contains(PyObject *o, PyObject *value);
+PyObject *SparseIndex_GetIter(PyObject *o);
 
 #endif

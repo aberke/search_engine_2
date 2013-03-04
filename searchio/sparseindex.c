@@ -58,12 +58,12 @@ PyTypeObject SparseIndexType = {
     0,                                          /*tp_as_buffer*/
     Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,   /*tp_flags*/
     "SparseIndex objects",                      /* tp_doc */
-    0,		                                    /* tp_traverse */
-    0,		                                    /* tp_clear */
-    0,		                                    /* tp_richcompare */
-    0,		                                    /* tp_weaklistoffset */
-    0,		                                    /* tp_iter */
-    0,		                                    /* tp_iternext */
+    0,                                          /* tp_traverse */
+    0,                                          /* tp_clear */
+    0,                                          /* tp_richcompare */
+    0,                                          /* tp_weaklistoffset */
+    &SparseIndex_GetIter,                       /* tp_iter */
+    0,                                          /* tp_iternext */
     0,                                          /* tp_methods */
     0,                                          /* tp_members */
     0,                                          /* tp_getset */
@@ -278,4 +278,9 @@ int SparseIndex_Contains(PyObject *o, PyObject *value)
     
     /* check if the term is in the dictionary */
     return PyDict_Contains(self->terms, value);
+}
+PyObject *SparseIndex_GetIter(PyObject *o)
+{
+    SparseIndex *self = (SparseIndex *)o;
+    return PyObject_GetIter(self->terms);
 }
