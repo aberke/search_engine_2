@@ -23,7 +23,7 @@ import searchio  # import our own optimized I/O module
 # input: filename of inverted index file
 # output: inverted index, N (total number of documents)
 def reconstruct_Index(ii_filename):
-	return searchio.loadIndex(ii_filename)
+	return searchio.loadSparseIndex(ii_filename)
 
 # helper functions to 
 # input: two positions lists: positions_1 corresponds to the positions list of the first word, positions_2 corresponds to the positions list of second word
