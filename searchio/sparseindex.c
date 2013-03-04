@@ -188,7 +188,6 @@ void SparseIndex_reconstruct(SparseIndex *self)
         PyDict_SetItemString(termEntry, "postingsOffset", PyLong_FromUnsignedLong(term.postingsOffset));
         PyDict_SetItemString(termEntry, "df", PyLong_FromUnsignedLong(term.df));
         PyDict_SetItemString(termEntry, "numDocumentsInPostings", PyLong_FromUnsignedLong(term.numDocumentsInPostings));
-        Py_INCREF(Py_None);
         
         PyDict_SetItem(self->terms, termStr, termEntry);
     }
