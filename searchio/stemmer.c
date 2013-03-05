@@ -43,23 +43,6 @@
 static char * b;       /* buffer for word to be stemmed */
 static int k,k0,j;     /* j is a general offset into the string */
 
-
-/* function prototypes to quiet compiler warnings */
-static int cons(int i);
-static int m();
-static int vowelinstem();
-static int doublec(int j);
-static int cvc(int i);
-static int ends(char * s);
-static void setto(char * s);
-static void r(char * s);
-static void step1ab();
-static void step1c();
-static void step2();
-static void step3();
-static void step4();
-static void step5();
-
 /* cons(i) is TRUE <=> b[i] is a consonant. */
 
 static int cons(int i)
@@ -81,7 +64,7 @@ static int cons(int i)
       ....
 */
 
-static int m()
+static int m(void)
 {  int n = 0;
    int i = k0;
    while(TRUE)
@@ -108,7 +91,7 @@ static int m()
 
 /* vowelinstem() is TRUE <=> k0,...j contains a vowel */
 
-static int vowelinstem()
+static int vowelinstem(void)
 {  int i; for (i = k0; i <= j; i++) if (! cons(i)) return TRUE;
    return FALSE;
 }
@@ -184,7 +167,7 @@ static void r(char * s) { if (m() > 0) setto(s); }
 
 */
 
-static void step1ab()
+static void step1ab(void)
 {  if (b[k] == 's')
    {  if (ends("\04" "sses")) k -= 2; else
       if (ends("\03" "ies")) setto("\01" "i"); else
@@ -208,14 +191,14 @@ static void step1ab()
 
 /* step1c() turns terminal y to i when there is another vowel in the stem. */
 
-static void step1c() { if (ends("\01" "y") && vowelinstem()) b[k] = 'i'; }
+static void step1c(void) { if (ends("\01" "y") && vowelinstem()) b[k] = 'i'; }
 
 
 /* step2() maps double suffices to single ones. so -ization ( = -ize plus
    -ation) maps to -ize etc. note that the string before the suffix must give
    m() > 0. */
 
-static void step2() { switch (b[k-1])
+static void step2(void) { switch (b[k-1])
 {
     case 'a': if (ends("\07" "ational")) { r("\03" "ate"); break; }
               if (ends("\06" "tional")) { r("\04" "tion"); break; }
@@ -256,7 +239,7 @@ static void step2() { switch (b[k-1])
 
 /* step3() deals with -ic-, -full, -ness etc. similar strategy to step2. */
 
-static void step3() { switch (b[k])
+static void step3(void) { switch (b[k])
 {
     case 'e': if (ends("\05" "icate")) { r("\02" "ic"); break; }
               if (ends("\05" "ative")) { r("\00" ""); break; }
@@ -273,7 +256,7 @@ static void step3() { switch (b[k])
 
 /* step4() takes off -ant, -ence etc., in context <c>vcvc<v>. */
 
-static void step4()
+static void step4(void)
 {  switch (b[k-1])
     {  case 'a': if (ends("\02" "al")) break; return;
        case 'c': if (ends("\04" "ance")) break;
@@ -303,7 +286,7 @@ static void step4()
 /* step5() removes a final -e if m() > 1, and changes -ll to -l if
    m() > 1. */
 
-static void step5()
+static void step5(void)
 {  j = k;
    if (b[k] == 'e')
    {  int a = m();
