@@ -5,6 +5,7 @@
 
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <arpa/inet.h>
 #include "searchio.h"
 #include "stemmer.h"
 #include "sparseindex.h"

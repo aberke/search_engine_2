@@ -5,6 +5,7 @@
 
 #include "sparseindex.h"
 #include <fcntl.h>
+#include <arpa/inet.h>
 #include "searchio.h"
 
 /* Object struct */
