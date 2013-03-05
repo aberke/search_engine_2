@@ -3,10 +3,10 @@
     A Python module for interacting with CS158 Search Engine indices.
 */
 
+#include "searchio.h"
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <arpa/inet.h>
-#include "searchio.h"
 #include "stemmer.h"
 #include "sparseindex.h"
 
