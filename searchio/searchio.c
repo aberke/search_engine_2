@@ -97,9 +97,12 @@ static PyObject *searchio_tokenize(PyObject *self, PyObject *args)
         /* is it a stop word? */
         if (!PySet_Contains(stopwords, pystr))
         {
-            /* stem it */
-            int newEnd = stem(str, 0, (int)(l - 1));
-            str[newEnd + 1] = '\0';
+            if (!keepStar || strchr(str, '*') == NULL)
+            {
+                /* stem it */
+                int newEnd = stem(str, 0, (int)(l - 1));
+                str[newEnd + 1] = '\0';
+            }
             
             /* add it to the list */
             PyList_Append(result, PyString_FromString(str));
