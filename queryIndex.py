@@ -208,7 +208,7 @@ def handle_BQ_expr(stopwords_set, index, scores, expr, N):
 			(base_postings, scores) = handle_BQ_expr(stopwords_set, index, scores, arguments[0], N)
 			for a in range(1, len(arguments)):
 				(postings, scores) = handle_BQ_expr(stopwords_set, index, scores, arguments[a], N)
-				(base_postings, scores) = BQ_OR(base_postings, postings, scores)
+				base_postings = BQ_OR(base_postings, postings)
 			return (base_postings, scores)
 		else: # operator == 'AND'
 			heap = [] # want to first sort arguments postings by length so we can being ANDing with smallest list
@@ -219,7 +219,7 @@ def handle_BQ_expr(stopwords_set, index, scores, expr, N):
 			base_postings = heapq.heappop(heap)[1]
 			for j in range(len(heap)):
 				postings = heapq.heappop(heap)[1]
-				(base_postings, scores) = BQ_AND(base_postings, postings, scores)
+				base_postings = BQ_AND(base_postings, postings)
 			return (base_postings, scores)
 			 
 # input: set of stopwords (stopwords_set)
