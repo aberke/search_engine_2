@@ -8,7 +8,7 @@ import heapq # using heap to sort postings lists by length so we can begin ANDin
 from bool_parser import bool_expr_ast as bool_parse # provided boolean parser for python2.6
 
 from XMLparser import tokenize, create_stopwords_set
-from queryIndex_util import initial_postings, index_postings, df_to_idf, df_to_idf_BQ, sort_posts, sort_posts_BQ
+from queryIndex_util import initial_postings, index_postings, df_to_idf, sort_posts, sort_posts_BQ
 from wildcard import permutermIndex_create, wildcard
 from BQ_util import *
 
@@ -71,7 +71,7 @@ def positions_AND(positions_1, positions_2, i_difference):
 
 	return intersection
 
-# helper to both handle_BQ and handle_PQ -- handles the AND
+# helper to handle_PQ -- handles the AND
 # input: postings_1: current intersection with calculated pageID scores that postings2 should be merged into
 # 	  	 postings_2: postings list to be intersected into postings_1 -- still has raw wf's rather than idf*wf scores
 #		 idf: idf of word corresponding to postings_2
@@ -195,7 +195,7 @@ def handle_BQ_expr(stopwords_set, index, scores, expr, N):
 		token = searchio.tokenize(stopwords_set, expr, False)[0]
 		if token in index:
 			(df, postings) = index[token]
-			idf = df_to_idf_BQ(N,df)
+			idf = df_to_idf(N,df)
 			(base_postings, scores) = initial_postings_scores(postings, idf, scores)
 			return (base_postings, scores)
 		else:
@@ -251,7 +251,7 @@ def handle_PQ(stopwords_set, index, permutermIndex, query, N):
 	heap = [] # I use a heap to first sort out which postings lists are smallest -- so that my ANDing can be efficient
 	for i in range(len(stream_list)):
 		term = stream_list[i]
-		(df, postings) = index_postings(index, permutermIndex, term, True)
+		(df, postings) = index_postings(index, permutermIndex, term, N, True)
 		if not postings:
 			return []
 		else:
@@ -300,7 +300,7 @@ def handle_FTQ(stopwords_set, index, permutermIndex, query, N):
 
 	for i in range(stream_length):
 		term = stream_list[i]
-		(df, postings) = index_postings(index, permutermIndex, term, False)
+		(df, postings) = index_postings(index, permutermIndex, term, N, False)
 		if postings:
 			idf = df_to_idf(N, df)
 			union = postings_OR(union, postings, idf)
@@ -321,11 +321,11 @@ def handle_query(stopwords_set, index, permutermIndex, query, N):
 		sorted_documents = sort_posts_BQ(postings, scores)
 		return sorted_documents
 	
-	if (query[0]=='"' and query[len(query)-2]=='"' and query[len(query)-1]=='\n') or (query[0]=='"' and query[len(query)-1]=='"'): # it's a PQ
+	if (query[0]=='"' and query[len(query)-2]=='"' and query[len(query)-1]=='\n') or (query[0]=='"' and query[len(query)-1]=='"'): # it's a PQ or WPQ
 		posts =  handle_PQ(stopwords_set, index, permutermIndex, query, N)
 		return sort_posts(posts)
 		
-	else: # it's a OWQ or FTQ
+	else: # it's a OWQ or FTQ or WQ
 		posts =  handle_FTQ(stopwords_set, index, permutermIndex, query, N)
 		return sort_posts(posts)
 
@@ -334,10 +334,8 @@ def handle_query(stopwords_set, index, permutermIndex, query, N):
 def queryIndex(stopwords_filename, ii_filename, ti_filename):
 	# rebuild index from file, and minipulate it into a permuterm index for wildcard queries.  Rebuild stopwords set from file
 	(index,N) = reconstruct_Index(ii_filename)
-	permutermIndex = {}
 	permutermIndex = permutermIndex_create(index) 
 	stopwords_set = create_stopwords_set(stopwords_filename)
-	#print("ready..")
 	while 1: # read queries from standard input until user enters CTRL+D
 		try:
 			query = sys.stdin.readline()

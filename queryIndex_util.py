@@ -69,17 +69,8 @@ def print_term_data(N, index, term):
 
 
 # computes idf from df and N (total documents) -- made this helper function so there would be no difference in computation style anywhere
-# BQ LOOKS LIKE IT WORKS BETTER WITHOUT 1 IN DENOMINATOR
-def df_to_idf_BQ(N, df): 
-	return log(float(N)/float(df)) 
-
-# computes idf from df and N (total documents) -- made this helper function so there would be no difference in computation style anywhere
 def df_to_idf(N, df): 
-	t = float(df+1) # HTA Matt Mahoney said in email that there should be the +1 in denominator to smooth out the computation for rarely occuring words
-	if t > N:
-		return 0
-	else:
-		return log(float(N)/t)  
+	return log(float(N)/float(df)) 
 
 # helps out the handle_BQ_expr, -- for the first postings list in the intersection, need to convert wf's into idf*wf scores right away to store in scores dictionary
 # input: postings list of format [[pageID, wf, [positions]] for each pageID] (postings)
@@ -129,14 +120,14 @@ def positions_OR(positions_1, positions_2):
 				i_1 += 1
 			break
 		# verified we're not at the end of one of the positions lists
-		pos1 = positions_1[i_1]
-		pos2 = positions_2[i_2]
+		pos_1 = positions_1[i_1]
+		pos_2 = positions_2[i_2]
 
 		if pos_1 == pos_2:
 			union.append(pos_1)
 			i_1 += 1
 			i_2 += 1
-		elif pos_1 < pos2:
+		elif pos_1 < pos_2:
 			union.append(pos_1)
 			i_1 += 1
 		else: #pos_1 > pos_2
@@ -170,28 +161,24 @@ def wildcard_postings_merge(postings_1, postings_2, positional):
 				i_1 += 1
 			break
 		# verified we're not at the end of one of the postings lists
-		post_1 = postings_1[i_1]
-		post_2 = postings_2[i_2]  # looks like (pageID, wf, [positions])
-		pageID_1 = post_1[0]
-		pageID_2 = post_2[0]
-
+		(pageID_1, wf_1, positions_1) = postings_1[i_1]
+		(pageID_2, wf_2, positions_2) = postings_2[i_2]  # looks like (pageID, wf, [positions])
+		wf = wf_1
+		positions = []
 		
 		if pageID_1 == pageID_2:
-			wf_1 = post_1[1]
-			wf_2 = post_2[1]
 			if wf_2 > wf_1: # set pageID weight as the maximum
-				post_1[1] = wf_2
+				wf = wf_2
 			if positional: # take union of positions list as the new positions list
-				positions = positions_OR(post_1[2], post_2[2])
-				post_1[2] = positions
-			union.append(post_1)
+				positions = positions_OR(positions_1, positions_2)
+			union.append([pageID_1, wf, positions])
 			i_1 += 1
 			i_2 += 1
 		elif pageID_1 < pageID_2:
-			union.append(post_1)
+			union.append([pageID_1, wf_1, positions_1])
 			i_1 += 1
 		else: #pageID_1 > pageID_2
-			union.append(post_2)
+			union.append([pageID_2, wf_2, positions_2])
 			i_2 += 1
 
 	return union
@@ -200,11 +187,12 @@ def wildcard_postings_merge(postings_1, postings_2, positional):
 # input: index (index) in format {index: [df, [postings list]] for each term}  postings list of form: [[pageID, wf, [positions list]] for each pageID]
 #		 permuterm index (permutermIndex) to match wildcard queries to terms in index
 #		 term (term) which may or may not be wildcard query -- need to return its corresponding postings list
+#		 total documents (N)
 #		 boolean (positional) where true indicates that the positions lists of the wildcard query matches should be merged -- necessary for WPQ (positional)
 # output: tuple (df, postings list) where df = document frequency
-def index_postings(index, permutermIndex, term, positional):
+def index_postings(index, permutermIndex, term, N, positional):
 	postings = []
-	df = 0
+	df = N
 	if not '*' in term:
 		if term in index:
 			(df, postings) = index[term]
@@ -214,8 +202,8 @@ def index_postings(index, permutermIndex, term, positional):
 			if not t in index:
 				print("#####ERROR -- TERM SHOULD BE IN INDEX -- ALEX FIX")
 			(next_df, next_postings) = index[t]
-			if next_df > df:
-				df = next_df # df = max df for any t in T
-			wildcard_postings_merge(postings, next_postings, positional)
+			if next_df < df:
+				df = next_df # df = min df for any t in T because want max idf
+			postings = wildcard_postings_merge(postings, next_postings, positional)
 	return (df, postings)
 
