@@ -4,22 +4,17 @@ from BTrees.OOBTree import OOBTree
 import sys
 # need sqrt and floor so that skips can occur every floor(sqrt(L)) pageID's where L = #pageID's
 from math import sqrt# used for calculating skip pointers
-from math import log # used for calculating inverse document frequency (idf)
 import heapq # using heap to sort postings lists by length so we can begin ANDing with smallest list
 from bool_parser import bool_expr_ast as bool_parse # provided boolean parser for python2.6
 
 from XMLparser import tokenize, create_stopwords_set
-from queryIndex_util import updateScores, index_postings
+from queryIndex_util import initial_postings, index_postings, df_to_idf, df_to_idf_BQ, sort_posts, sort_posts_BQ
 from wildcard import permutermIndex_create, wildcard
+from BQ_util import *
 
 import searchio  # import our own optimized I/O module
 
 # index form: {'term': [df, [[pageID, wf, [position for position in page]] for each pageID]]}
-# SHOULD BE REPLACED WITH:
-#		{'term': [df, (function to retrieve postings list from file)]}
-
-# index written to file in format:  term*df&pageID_0%wf% pos_0 pos_1&pageID_1%wf% pos_0 pos_1 pos2&pageID_2%wf% pos_0
-
 # reconstructs the invertedIndex that createIndex made by reading from file
 # input: filename of inverted index file
 # output: inverted index, N (total number of documents)
@@ -143,13 +138,6 @@ def postings_AND(postings_1, postings_2, idf, i_difference):
 def PQ_AND(postings_1, postings_2, idf, i_difference):
 	return postings_AND(postings_1, postings_2, idf, i_difference)
 
-# helper to handle_BQ -- handles the AND & uses helper function postings_AND
-# input: postings_1: current intersection with calculated pageID scores that postings2 should be merged into
-# 	  	 postings_2: postings list to be intersected into postings_1 -- still has raw wf's rather than idf*wf scores
-#		 idf: idf of word corresponding to postings_2
-# output: intersection with updated scores
-def BQ_AND(postings_1, postings_2, idf):
-	return postings_AND(postings_1, postings_2, idf, 0)
 
 
 # input: postings1: postings list to merge second postings list into -- its posts already have correctly calculated scores for documents
@@ -165,77 +153,74 @@ def postings_OR(postings_1, postings_2, idf):
 		if i_1 == len(postings_1):
 			# tack on the rest of the postings_2 (after wf's converted to idf.wf doc scores) to union and we're done
 			while i_2 < len(postings_2):
-				post_2 = postings_2[i_2]
-				post_2[1] *= idf # score = idf*wf
-				union.append(post_2)
+				(pageID, wf, positions) = postings_2[i_2] # copy it rather than point to it so that we can mess with score
+				score = idf*wf
+				union.append([pageID, score, positions])
 				i_2 += 1
 			break
 
 		if i_2 == len(postings_2):
 			# tack on the rest of the postings_1 to union and we're done -- we already know that it has correctly calculated document scores
 			while i_1 < len(postings_1):
-				union.append(postings_1[i_1])
+				union.append(list(postings_1[i_1])) # copy it rather than point to it so we can mess with score
 				i_1 += 1
 			break
 		# verified we're not at the end of one of the postings lists
-		post_1 = postings_1[i_1]
-		post_2 = postings_2[i_2]  # looks like (pageID, wf, [positions])
-		pageID_1 = post_1[0]
-		pageID_2 = post_2[0]
+		(pageID_1, score_1, positions_1) = postings_1[i_1]
+		(pageID_2, wf_2, positions_2) = postings_2[i_2]
 
-		toAdd = idf*post_2[1] # idf*wf
-		
 		if pageID_1 == pageID_2:
-			post_1[1] += toAdd
-			union.append(post_1)
+			score = score_1 + (idf*wf_2)
+			union.append([pageID_1, score, positions_1])
 			i_1 += 1
 			i_2 += 1
 		elif pageID_1 < pageID_2:
-			union.append(post_1)
+			union.append([pageID_1, score_1, positions_1])
 			i_1 += 1
 		else: #pageID_1 > pageID_2
-			post_2[1] = toAdd
-			union.append(post_2)
+			union.append([pageID_2, idf*wf_2, positions_2])
 			i_2 += 1
-
 	return union
 
 # input: set of stopwords (stopwords_set)
 #		 inverted index (index)
+#		 dictionary mapping pageID to current score (scores)
 # 		 boolean expression (expr) -- that this function is called recursively on
-# output: tuple (postings-list, idf): postings-list that satisfies boolean expression (expr)
-def handle_BQ_expr(stopwords_set, index, expr, N):
+#		 total documents in collection (N)
+# output: tuple (postings-list, scores): postings-list that satisfies boolean expression (expr), scores updated
+def handle_BQ_expr(stopwords_set, index, scores, expr, N):
+	base_postings = []
 	# base case
 	if type(expr) == str:
 		token = searchio.tokenize(stopwords_set, expr, False)[0]
 		if token in index:
 			(df, postings) = index[token]
-			idf = log(N/df)
-			return (postings, idf)
+			idf = df_to_idf_BQ(N,df)
+			(base_postings, scores) = initial_postings_scores(postings, idf, scores)
+			return (base_postings, scores)
 		else:
-			return ([], 1)
+			return ([], scores)
 	else:
 		operator = expr[0] # AND or OR
 		arguments = expr[1] # list of boolean expressions (base case is that they're just words)
-		base_postings = []
 
 		if operator == 'OR':
-			for arg in arguments:
-				(postings, idf) = handle_BQ_expr(stopwords_set, index, arg, N)
-				base_postings = postings_OR(base_postings, postings, idf) 
-			return (base_postings, 1)
+			(base_postings, scores) = handle_BQ_expr(stopwords_set, index, scores, arguments[0], N)
+			for a in range(1, len(arguments)):
+				(postings, scores) = handle_BQ_expr(stopwords_set, index, scores, arguments[a], N)
+				(base_postings, scores) = BQ_OR(base_postings, postings, scores)
+			return (base_postings, scores)
 		else: # operator == 'AND'
 			heap = [] # want to first sort arguments postings by length so we can being ANDing with smallest list
 			for arg in arguments:
-				(postings, idf) = handle_BQ_expr(stopwords_set, index, arg, N)
-				heapq.heappush(heap, (len(postings), (idf, postings)))
+				(postings, scores) = handle_BQ_expr(stopwords_set, index, scores, arg, N)
+				heapq.heappush(heap, (len(postings), postings))
 
-			(idf, base_postings) = heapq.heappop(heap)[1]
-			heap_len = len(heap)
+			base_postings = heapq.heappop(heap)[1]
 			for j in range(len(heap)):
-				(idf, postings) = heapq.heappop(heap)[1]
-				base_postings = BQ_AND(base_postings, postings, idf)
-			return (base_postings, 1)
+				postings = heapq.heappop(heap)[1]
+				(base_postings, scores) = BQ_AND(base_postings, postings, scores)
+			return (base_postings, scores)
 			 
 # input: set of stopwords (stopwords_set)
 #		 inverted index (index)
@@ -245,8 +230,9 @@ def handle_BQ(stopwords_set, index, query, N):
 	# ('OR', ['Her', ('OR', ['This', 'That']), ('OR', ['This', 'That'])])
 	# for now we assume we get well formed Boolean queries with no stopwords
 	bool_expr = bool_parse(query)
-	(postings, idf) = handle_BQ_expr(stopwords_set, index, bool_expr, N)
-	return postings
+	scores = {} # initialize dictionary mapping pageIDs to score
+	(postings, scores) = handle_BQ_expr(stopwords_set, index, scores, bool_expr, N)
+	return (postings, scores)
 
 # input: set of stopwords (stopwords_set)
 #		 inverted index (index)
@@ -269,8 +255,8 @@ def handle_PQ(stopwords_set, index, permutermIndex, query, N):
 		if not postings:
 			return []
 		else:
-			idf = log(N/df)
-			tup = (len(postings), (i, postings, idf)) # stores in heap: (len(postings), (indexInQuery, idf, postings))
+			idf = df_to_idf(N, df)
+			tup = (len(postings), (i, postings, idf))
 			heapq.heappush(heap, tup)
 
 	num_tokens = len(heap)
@@ -279,15 +265,14 @@ def handle_PQ(stopwords_set, index, permutermIndex, query, N):
 	if not num_tokens:
 		return [] # returns empty list
 	
-	tup = heapq.heappop(heap) # tup = (len(postings), (indexInQuery, idf, postings))
-	(i_1, idf, postings) = tup[1]
+	tup = heapq.heappop(heap) # tup = (len(postings), (i, postings, idf))
+	(i_1, postings, idf) = tup[1]
 	# get inital intersection
-	intersection = updateScores(postings, idf) # update scores takes normal postings list and multiplies each wf by idf to get score
+	intersection = initial_postings(postings, idf) # update scores takes normal postings list and multiplies each wf by idf to get score
 
 	for j in range(1, num_tokens):
-		tup = heapq.heappop(heap) # tup = (len(postings), (indexInQuery, idf, postings))
-		(i_2, idf, postings) = tup[1]
-		# update intersection by intersecting on current intersection, and newly retrieved postings list.  
+		tup = heapq.heappop(heap) # tup = (len(postings), (i, postings, idf))
+		(i_2, postings, idf) = tup[1]
 		intersection = PQ_AND(intersection, postings, idf, i_2-i_1) # We send in the difference of the indecies of the words in query for the positional AND
 		if not intersection:
 			# if nothing is left in intersection, can break out of loop now with nothing to return
@@ -297,8 +282,6 @@ def handle_PQ(stopwords_set, index, permutermIndex, query, N):
 
 	return intersection
 
-#delete when done debugging
-queries = {}
 
 # input: set of stopwords (stopwords_set)
 #		 inverted index (index)
@@ -317,16 +300,9 @@ def handle_FTQ(stopwords_set, index, permutermIndex, query, N):
 
 	for i in range(stream_length):
 		term = stream_list[i]
-		# if term in queries:
-		# 	queries[term] += 1
-		# 	if queries[term] == 2:
-		# 		print("**** MUST SKIP THIS LINE TO AVOID SEGFAULT *****")
-		# 		return []
-		# else:
-		# 	queries[term] = 0
 		(df, postings) = index_postings(index, permutermIndex, term, False)
 		if postings:
-			idf = log(N/df)
+			idf = df_to_idf(N, df)
 			union = postings_OR(union, postings, idf)
 	return union
  
@@ -341,38 +317,17 @@ def handle_query(stopwords_set, index, permutermIndex, query, N):
 	# determine query type (OWQ, FTQ, PQ, BQ)
 	if ('AND' in query or 'OR' in query or ')' in query or '(' in query):  # note that the boolean parser strips off trailing '\n'
 		# handle BQ in its own way
-		return handle_BQ(stopwords_set, index, query, N)
+		(postings, scores) =  handle_BQ(stopwords_set, index, query, N)
+		sorted_documents = sort_posts_BQ(postings, scores)
+		return sorted_documents
 	
 	if (query[0]=='"' and query[len(query)-2]=='"' and query[len(query)-1]=='\n') or (query[0]=='"' and query[len(query)-1]=='"'): # it's a PQ
-		return handle_PQ(stopwords_set, index, permutermIndex, query, N)
+		posts =  handle_PQ(stopwords_set, index, permutermIndex, query, N)
+		return sort_posts(posts)
 		
 	else: # it's a OWQ or FTQ
-		return handle_FTQ(stopwords_set, index, permutermIndex, query, N)
-
-# helper to queryIndex main function that sorts the posts retrieved
-# creates a max-heap -- stuffs all the posts into the heap, and then pops them off and puts the pageID in string form
-# input: list of posts sorted by pageID
-# output: string of pageIDs sorted by document score
-def sort_posts(posts):
-	heap = []
-	# when documents have the same score I want to order them in the same order as the TA's -- is that by increasing document ID?
-	# SO FAR IT SEEMS THAT WHEN TWO DOCS HAVE SAME SCORE TAS ORDER THEM WITH LARGET DOCID FIRST
-	for j in range(len(posts)):
-		tup = posts[j] # (pageID, score, [positions list])
-		# push to heap: [-score, -pageID, pageID] -- using (-)*score to turn minheap to maxheap and using (-1)*pageID in case same score and higher pageID should be first
-		entry = [(-1)*tup[1], (-1)*tup[0], str(tup[0])]
-		heapq.heappush(heap, entry) 
-	
-	documents = ''
-	for i in range(10):
-		if len(heap) == 0:
-			break
-		if i > 0:
-			documents += ' '
-		next = heapq.heappop(heap) # next = entry [-score, -pageID, str(pageID)]
-		documents += next[2]
-		#documents += ("("+next[1]+","+str(-1*next[0])+")")
-	return documents
+		posts =  handle_FTQ(stopwords_set, index, permutermIndex, query, N)
+		return sort_posts(posts)
 
 
 # main function
@@ -380,7 +335,7 @@ def queryIndex(stopwords_filename, ii_filename, ti_filename):
 	# rebuild index from file, and minipulate it into a permuterm index for wildcard queries.  Rebuild stopwords set from file
 	(index,N) = reconstruct_Index(ii_filename)
 	permutermIndex = {}
-	#permutermIndex = permutermIndex_create(index) 
+	permutermIndex = permutermIndex_create(index) 
 	stopwords_set = create_stopwords_set(stopwords_filename)
 	#print("ready..")
 	while 1: # read queries from standard input until user enters CTRL+D
@@ -390,9 +345,8 @@ def queryIndex(stopwords_filename, ii_filename, ti_filename):
 			break
 		if not query:
 			break
-		posts = handle_query(stopwords_set, index, permutermIndex, query, N)
-		documents = sort_posts(posts)
-		#print(documents)
+		sorted_documents = handle_query(stopwords_set, index, permutermIndex, query, N)
+		print(sorted_documents)
 	return	
 
 queryIndex(sys.argv[1], sys.argv[2], sys.argv[3])

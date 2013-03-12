@@ -1,13 +1,111 @@
 # queryIndex util
+import heapq # using heap to sort postings lists by length so we can begin ANDing with smallest list
+from math import log # used for calculating inverse document frequency (idf)
+
 from wildcard import wildcard
+
+
+# heper to sort_posts and sort_posts_BQ --> does the popping of the heap
+# input: heap (heap) where elements are lists [-score, -pageID, pageID]
+# output: string (sorted_documents) that is the pageIDs sorted by document score
+def sort_posts_pop(heap):
+	documents = ''
+	for i in range(10):
+		if len(heap) == 0:
+			break
+		next = heapq.heappop(heap) # next = entry [-score, -pageID, str(pageID)]
+		if i > 0:
+			#documents += ") ("
+			documents += ' '
+		documents += next[2]
+		#documents = documents +next[2]+","+str(-1*next[0])
+	return documents
+
+
+# helper to queryIndex main function that sorts the posts retrieved -- specific for BQ queries since scoring done in separate dictionary
+# creates a max-heap -- stuffs all the posts into the heap, and then pops them off and puts the pageID in string form
+# input: list of posts sorted by pageID (posts)
+#		 dictionary mapping pageID's to scores (scores)
+# output: string of pageIDs sorted by document score
+def sort_posts_BQ(posts, scores):
+	heap = []
+	# when documents have the same score I want to order them in the same order as the TA's -- convention seems that when 2 docIDs match, TAs order larger docID first
+	for j in range(len(posts)):
+		pageID = posts[j][0] # (pageID, score, [positions list])
+		score = round(scores[pageID], 4) # it seems like they're using about this level of precision... let's see
+		# push to heap: [-score, -pageID, pageID] -- using (-)*score to turn minheap to maxheap and using (-1)*pageID in case same score and higher pageID should be first
+		entry = [(-1)*score, (-1)*pageID, str(pageID)]
+		heapq.heappush(heap, entry) 
+	
+	sorted_documents = sort_posts_pop(heap)
+	return sorted_documents
+
+# helper to queryIndex main function that sorts the posts retrieved
+# creates a max-heap -- stuffs all the posts into the heap, and then pops them off and puts the pageID in string form
+# input: list of posts sorted by pageID
+# output: string of pageIDs sorted by document score
+def sort_posts(posts):
+	heap = []
+	# when documents have the same score I want to order them in the same order as the TA's -- convention seems that when 2 docIDs match, TAs order larger docID first
+	for j in range(len(posts)):
+		tup = posts[j] # (pageID, score, [positions list])
+		score = round(tup[1], 4) # it seems like they're using about this level of precision... let's see
+		# push to heap: [-score, -pageID, pageID] -- using (-)*score to turn minheap to maxheap and using (-1)*pageID in case same score and higher pageID should be first
+		entry = [(-1)*score, (-1)*tup[0], str(tup[0])]
+		heapq.heappush(heap, entry) 
+	
+	sorted_documents = sort_posts_pop(heap)
+	return sorted_documents
+
+
+
+def print_term_data(N, index, term):
+	data = 'total docs: '+str(N)+', term: '+term+', term df: '
+	if not term in index:
+		data += 'term not in index!'
+	else:
+		data += str(index[term][0])
+	print(data)
+
+
+# computes idf from df and N (total documents) -- made this helper function so there would be no difference in computation style anywhere
+# BQ LOOKS LIKE IT WORKS BETTER WITHOUT 1 IN DENOMINATOR
+def df_to_idf_BQ(N, df): 
+	return log(float(N)/float(df)) 
+
+# computes idf from df and N (total documents) -- made this helper function so there would be no difference in computation style anywhere
+def df_to_idf(N, df): 
+	t = float(df+1) # HTA Matt Mahoney said in email that there should be the +1 in denominator to smooth out the computation for rarely occuring words
+	if t > N:
+		return 0
+	else:
+		return log(float(N)/t)  
+
+# helps out the handle_BQ_expr, -- for the first postings list in the intersection, need to convert wf's into idf*wf scores right away to store in scores dictionary
+# input: postings list of format [[pageID, wf, [positions]] for each pageID] (postings)
+#		 idf to multiply each wf by (idf)
+#		 current scores dictionary to update (scores)
+# output: tuple(postings, scores): postings list of format [[pageID, score(idf,wf), [positions]] for each pageID], scores updated scores dictionary
+def initial_postings_scores(postings, idf, scores):
+	for post in postings:
+		pageID = post[0]
+		if pageID in scores:
+			scores[pageID] += idf*post[1]
+		else:
+			scores[pageID] = idf*post[1]
+	return (postings, scores)
+
 
 # helps out the handle_PQ, -- for the first postings list in the intersection, need to convert wf's into idf*wf scores right away
 # input: postings list of format [[pageID, wf, [positions]] for each pageID]
 # output: postings list of format [[pageID, score(idf,wf), [positions]] for each pageID]
-def updateScores(postings, idf):
+def initial_postings(postings, idf):
+	updated_postings = []
 	for post in postings:
-		post[1] *= idf
-	return postings 
+		updated_postings.append([post[0], post[1]*idf, post[2]])
+	return updated_postings 
+
+
 
 # input: 2 ordered positions lists to take the union of
 # output: ordered list 
@@ -97,6 +195,7 @@ def wildcard_postings_merge(postings_1, postings_2, positional):
 			i_2 += 1
 
 	return union
+
 
 # input: index (index) in format {index: [df, [postings list]] for each term}  postings list of form: [[pageID, wf, [positions list]] for each pageID]
 #		 permuterm index (permutermIndex) to match wildcard queries to terms in index

@@ -53,13 +53,11 @@ def wildcard(tree, term):
 	seekMax = seek[:len(seek)-1]+chr(ord(seek[len(seek)-1])+1)
 	# get results
 	theRange = tree.keys(min=seek, max=seekMax, excludemin=False, excludemax=True)
-	#items_count = 0
 	for t in theRange:
 		if middle in t:
 			# found a match! but need to rotate it back into an actual term
-			#results[items_count] = unrotateTerm(t)
-			#items_count += 1
 			results[unrotateTerm(t)] = True
+
 	return results
 
 

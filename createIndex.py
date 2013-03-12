@@ -21,6 +21,8 @@ def titleIndex_append(f, pageID, titleString):
 def docVecNorm(page_index):
 	norm = 0
 	for term in page_index:
+		if page_index[term][0] != len(page_index[term][1]):
+			print('ERROR SEE docVecNorm')
 		tf = page_index[term][0]
 		norm += (tf*tf)
 	return sqrt(norm)
@@ -60,7 +62,7 @@ def createIndex(stopwords_filename, pagesCollection_filename, ii_filename, ti_fi
 
 	# obtain heap mapping pageID's to tuple (list of title words, list of title and text words)
 	(collection, maxID) = parse(pagesCollection_filename)
-	
+
 	# iterate over keys (pageID's) to fill the index
 	for i in range(maxID+1):
 		if not i in collection:
@@ -79,23 +81,24 @@ def createIndex(stopwords_filename, pagesCollection_filename, ii_filename, ti_fi
 		titleIndex_append(titleIndex_file, pageID, titleString)
 
 		# tokenize titleString
-		# token_list = tokenize(stopWords_set, stemmer, textString)
 		token_list = searchio.tokenize(stopWords_set, textString, False)
 		
 		# add to index:
 		position = 0
-		for token in token_list:
+		for t in range(len(token_list)):
+			token = token_list[t]
+
 			# now put token in curr_page_index dict which has structure {"term_t": [tf_t, [position for position in page]] for term_t in page}
 			if not token in curr_page_index:
 				# create new temp_postings entry
 				curr_page_index[token] = [0,[]] # page_postings entry initialized to [tf=0, positions=[]]
 
-			page_postings = curr_page_index[token]
-			page_postings[0] += 1 # increment tf
-			page_postings[1].append(position) #append position to postings list
+			curr_page_index[token][0] += 1 # increment tf
+			curr_page_index[token][1].append(position) #append position to postings list
 			# now just adjust position
 			position += 1
-		
+
+
 		# now curr_page_index built --> need to calculate wf and insert [pageID, wf, [positions]] into index
 		# first calculate length of document vector:
 		curr_norm = docVecNorm(curr_page_index)
@@ -103,19 +106,17 @@ def createIndex(stopwords_filename, pagesCollection_filename, ii_filename, ti_fi
 		for term in curr_page_index:
 			# create new post to insert into index
 			new_post = formPost(pageID, curr_page_index[term], curr_norm)
+
 			# insert new post into index
 			if not term in index:
 				# create new postings entry
 				index[term] = [0, []] # postings initialized to [df=0, postings=[]]
 			# append post to postings
-			postings = index[term]
-			postings[0] += 1 # increment df
-			postings[1].append(new_post) # append post to postings list
+			index[term][0] += 1 # increment df
+			index[term][1].append(new_post) # append post to postings list
 
 	# now the index is built in form {'term': [df, [[pageID, wf, [position for position in page]] for each pageID]]}
 	titleIndex_file.close() # done writing to titleIndex
-	# write out index in format:  term*df&pageID_0%wf% pos_0 pos_1&pageID_1%wf% pos_0 pos_1 pos2&pageID_2%wf% pos_0
-	#print one line for each word in index 
 	printIndex(ii_filename, N, index)
 	return index
 				
