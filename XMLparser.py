@@ -3,7 +3,6 @@
 import heapq # using heap to push docIDs as find them in parse
 
 import re
-from porter_martin import PorterStemmer
 
 # input: filename (fname) of the stopWords file
 # output: set of stopwords
