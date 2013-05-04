@@ -21,20 +21,18 @@ def titleIndex_append(f, pageID, titleString):
 def docVecNorm(page_index):
 	norm = 0
 	for term in page_index:
-		if page_index[term][0] != len(page_index[term][1]):
-			print('ERROR SEE docVecNorm')
-		tf = page_index[term][0]
+		#tf = page_index[term][0]
+		tf = len(page_index[term])
 		norm += (tf*tf)
 	return sqrt(norm)
 			
 # helper function to createIndex -- forms new post for postings list of index
-# input: page_post [tf, [positions]]
+# input: page_post [positions]
 # output: new_post [pageID, wf, [positions]]
 def formPost(pageID, page_post, page_norm):
-	positions = page_post[1]
-	tf = page_post[0]
+	tf = len(page_post)
 	wf = tf/page_norm
-	new_post = [pageID, wf, positions]
+	new_post = (pageID, wf, tuple(page_post))
 	return new_post
 
 # helper to createIndex: after the index is created, must print it to the ii_filename file
@@ -85,24 +83,23 @@ def createIndex(stopwords_filename, pagesCollection_filename, ii_filename, ti_fi
 		
 		# add to index:
 		position = 0
-		for t in range(len(token_list)):
-			token = token_list[t]
+		for token in token_list:
 
-			# now put token in curr_page_index dict which has structure {"term_t": [tf_t, [position for position in page]] for term_t in page}
+			# now put token in curr_page_index dict which has structure {"term_t": [position for position in page] for term_t in page}
 			if not token in curr_page_index:
 				# create new temp_postings entry
-				curr_page_index[token] = [0,[]] # page_postings entry initialized to [tf=0, positions=[]]
+				curr_page_index[token] = [] # page_postings entry initialized to positions=[]
 
-			curr_page_index[token][0] += 1 # increment tf
-			curr_page_index[token][1].append(position) #append position to postings list
+			#curr_page_index[token][0] += 1 # increment tf
+			curr_page_index[token].append(position) #append position to postings list
 			# now just adjust position
 			position += 1
 
 
-		# now curr_page_index built --> need to calculate wf and insert [pageID, wf, [positions]] into index
+		# now curr_page_index built --> need to calculate wf and insert (pageID, wf, (positions)) into index
 		# first calculate length of document vector:
 		curr_norm = docVecNorm(curr_page_index)
-		# now calculate wf for each term in document and insert [pageID, wf, [positions]] into index
+		# now calculate wf for each term in document and insert (pageID, wf, (positions)) into index
 		for term in curr_page_index:
 			# create new post to insert into index
 			new_post = formPost(pageID, curr_page_index[term], curr_norm)
@@ -110,12 +107,11 @@ def createIndex(stopwords_filename, pagesCollection_filename, ii_filename, ti_fi
 			# insert new post into index
 			if not term in index:
 				# create new postings entry
-				index[term] = [0, []] # postings initialized to [df=0, postings=[]]
+				index[term] = [] # postings initialized to postings=[]
 			# append post to postings
-			index[term][0] += 1 # increment df
-			index[term][1].append(new_post) # append post to postings list
+			index[term].append(new_post) # append post to postings list
 
-	# now the index is built in form {'term': [df, [[pageID, wf, [position for position in page]] for each pageID]]}
+	# now the index is built in form {'term': [(pageID, wf, (position for position in page) for each pageID]]}
 	titleIndex_file.close() # done writing to titleIndex
 	printIndex(ii_filename, N, index)
 	return index

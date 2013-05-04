@@ -12,7 +12,7 @@ then
 fi
 
 # want to use provided btrees
-export PYTHONPATH=/course/cs158/src/lib/btrees/py26:$PYTHONPATH
+export PYTHONPATH=/course/cs158/src/lib/btrees/py26:pybin:$PYTHONPATH
 
 # Main program to be executed
 MAIN="queryIndex.py"

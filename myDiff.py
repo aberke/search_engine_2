@@ -250,7 +250,7 @@ def thatDiff(fname1, fname2):
     f2.close()
 
 #problematic_docs(sys.argv[1], sys.argv[2],sys.argv[3], sys.argv[4])
-compare_scores(sys.argv[1], sys.argv[2])
-#compare(sys.argv[1], sys.argv[2])
+#compare_scores(sys.argv[1], sys.argv[2])
+compare(sys.argv[1], sys.argv[2])
 #thisDiff(sys.argv[1], sys.argv[2])
 #thatDiff(sys.argv[1], sys.argv[2])

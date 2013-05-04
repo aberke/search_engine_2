@@ -164,13 +164,15 @@ static PyObject *searchio_createIndex(PyObject *self, PyObject *args)
         
         /* pull out the term, its df, and a reference to the postings list */
         const char *termStr = PyString_AS_STRING(key);
-        PyObject *pydf = PyList_GetItem(value, 0);
-        PyObject *postings = PyList_GetItem(value, 1);
+        /*PyObject *pydf = PyList_GetItem(value, 0);
+        PyObject *postings = PyList_GetItem(value, 1);*/
+        PyObject *postings = value;
         Py_ssize_t postingsLen = PyList_Size(postings);
         
         /* fill in the header */
         size_t termLen = strlen(termStr);
-        term.df = htonl(PyInt_AsUnsignedLongMask(pydf));
+        /* term.df = htonl(PyInt_AsUnsignedLongMask(pydf)); */
+        term.df = htonl((uint32_t)postingsLen);
         term.numDocumentsInPostings = htonl((uint32_t)postingsLen);
         term.termLength = htons((uint16_t)termLen);
         
@@ -183,9 +185,9 @@ static PyObject *searchio_createIndex(PyObject *self, PyObject *args)
         Py_ssize_t i;
         for (i = 0; i < postingsLen; i++)
         {
-            PyObject *entryList = PyList_GetItem(postings, i);
-            PyObject *positions = PyList_GetItem(entryList, 2);
-            Py_ssize_t positionLen = PyList_Size(positions);
+            PyObject *entryTuple = PyList_GetItem(postings, i);
+            PyObject *positions = PyTuple_GetItem(entryTuple, 2);
+            Py_ssize_t positionLen = PyTuple_Size(positions);
             
             /* on-disk size is size of a posting struct, plus sizeof(uint32_t) * positions */
             totalSize += (uint32_t)sizeof(searchio_index_posting_t) + (uint32_t)(positionLen * sizeof(uint32_t));
@@ -205,7 +207,8 @@ static PyObject *searchio_createIndex(PyObject *self, PyObject *args)
         PyObject *value = PyDict_GetItem(index, key);
         
         /* get the postings list and its length */
-        PyObject *postings = PyList_GetItem(value, 1);
+        /* PyObject *postings = PyList_GetItem(value, 1); */
+        PyObject *postings = value;
         Py_ssize_t postingsLen = PyList_Size(postings);
         
         /* loop over each entry in the postings list and write it out */
@@ -213,11 +216,11 @@ static PyObject *searchio_createIndex(PyObject *self, PyObject *args)
         for (i = 0; i < postingsLen; i++)
         {
             /* pull out some values */
-            PyObject *entryList = PyList_GetItem(postings, i);
-            PyObject *pypageID = PyList_GetItem(entryList, 0);
-            PyObject *pywf = PyList_GetItem(entryList, 1);
-            PyObject *positions = PyList_GetItem(entryList, 2);
-            Py_ssize_t positionsLen = PyList_Size(positions);
+            PyObject *entryTuple = PyList_GetItem(postings, i);
+            PyObject *pypageID = PyTuple_GetItem(entryTuple, 0);
+            PyObject *pywf = PyTuple_GetItem(entryTuple, 1);
+            PyObject *positions = PyTuple_GetItem(entryTuple, 2);
+            Py_ssize_t positionsLen = PyTuple_Size(positions);
             
             /* create a header */
             searchio_index_posting_t posting;
@@ -232,7 +235,7 @@ static PyObject *searchio_createIndex(PyObject *self, PyObject *args)
             Py_ssize_t j;
             for (j = 0; j < positionsLen; j++)
             {
-                PyObject *item = PyList_GetItem(positions, j);
+                PyObject *item = PyTuple_GetItem(positions, j);
                 uint32_t p = htonl((uint32_t)PyInt_AsUnsignedLongMask(item));
                 write(fd, (void *)&p, sizeof(p));
             }
